@@ -39,101 +39,114 @@ async def stream_outlines(
     temp_dir = TEMP_FILE_SERVICE.create_temp_dir()
 
     async def inner():
-        yield SSEStatusResponse(
-            status="Generating presentation outlines..."
-        ).to_string()
+        try:
+            yield SSEStatusResponse(
+                status="Generating presentation outlines..."
+            ).to_string()
 
-        additional_context = ""
-        if presentation.file_paths:
-            documents_loader = DocumentsLoader(
-                file_paths=presentation.file_paths,
-                presentation_language=presentation.language,
-            )
-            await documents_loader.load_documents(temp_dir)
-            documents = documents_loader.documents
-            if documents:
-                additional_context = "\n\n".join(documents)
+            additional_context = ""
+            if presentation.file_paths:
+                documents_loader = DocumentsLoader(
+                    file_paths=presentation.file_paths,
+                    presentation_language=presentation.language,
+                )
+                await documents_loader.load_documents(temp_dir)
+                documents = documents_loader.documents
+                if documents:
+                    additional_context = "\n\n".join(documents)
 
-        presentation_outlines_text = ""
+            presentation_outlines_text = ""
 
-        if presentation.n_slides > 0:
-            n_slides_to_generate = get_no_of_outlines_to_generate_for_n_slides(
-                n_slides=presentation.n_slides,
-                toc=presentation.include_table_of_contents,
-                title_slide=presentation.include_title_slide,
-            )
-        else:
-            n_slides_to_generate = None
+            if presentation.n_slides > 0:
+                n_slides_to_generate = get_no_of_outlines_to_generate_for_n_slides(
+                    n_slides=presentation.n_slides,
+                    toc=presentation.include_table_of_contents,
+                    title_slide=presentation.include_title_slide,
+                )
+            else:
+                n_slides_to_generate = None
 
-        async for chunk in generate_ppt_outline(
-            presentation.content,
-            n_slides_to_generate,
-            presentation.language,
-            additional_context,
-            presentation.tone,
-            presentation.verbosity,
-            presentation.instructions,
-            presentation.include_title_slide,
-            presentation.web_search,
-            presentation.include_table_of_contents,
-        ):
-            # Give control to the event loop
-            await asyncio.sleep(0)
+            async for chunk in generate_ppt_outline(
+                presentation.content,
+                n_slides_to_generate,
+                presentation.language,
+                additional_context,
+                presentation.tone,
+                presentation.verbosity,
+                presentation.instructions,
+                presentation.include_title_slide,
+                presentation.web_search,
+                presentation.include_table_of_contents,
+            ):
+                # Give control to the event loop
+                await asyncio.sleep(0)
 
-            if isinstance(chunk, HTTPException):
-                yield SSEErrorResponse(detail=chunk.detail).to_string()
+                if isinstance(chunk, HTTPException):
+                    yield SSEErrorResponse(detail=chunk.detail).to_string()
+                    return
+
+                yield SSEResponse(
+                    event="response",
+                    data=json.dumps({"type": "chunk", "chunk": chunk}),
+                ).to_string()
+
+                presentation_outlines_text += chunk
+
+            try:
+                presentation_outlines_json = dict(
+                    dirtyjson.loads(presentation_outlines_text)
+                )
+            except Exception as e:
+                traceback.print_exc()
+                yield SSEErrorResponse(
+                    detail=f"Failed to generate presentation outlines. Please try again. {str(e)}",
+                ).to_string()
                 return
 
-            yield SSEResponse(
-                event="response",
-                data=json.dumps({"type": "chunk", "chunk": chunk}),
-            ).to_string()
+            presentation_outlines = PresentationOutlineModel(**presentation_outlines_json)
 
-            presentation_outlines_text += chunk
+            if (
+                n_slides_to_generate is not None
+                and len(presentation_outlines.slides) != n_slides_to_generate
+            ):
+                yield SSEErrorResponse(
+                    detail=(
+                        "Failed to generate presentation outlines with requested "
+                        "number of slides. Please try again."
+                    )
+                ).to_string()
+                return
 
-        try:
-            presentation_outlines_json = dict(
-                dirtyjson.loads(presentation_outlines_text)
+            if n_slides_to_generate is not None:
+                presentation_outlines.slides = presentation_outlines.slides[
+                    :n_slides_to_generate
+                ]
+
+            if presentation.n_slides <= 0:
+                presentation.n_slides = len(presentation_outlines.slides)
+
+            presentation.outlines = presentation_outlines.model_dump()
+            presentation.title = get_presentation_title_from_presentation_outline(
+                presentation_outlines
             )
+
+            sql_session.add(presentation)
+            await sql_session.commit()
+
+            yield SSECompleteResponse(
+                key="presentation", value=presentation.model_dump(mode="json")
+            ).to_string()
         except Exception as e:
+            # Catch any unhandled exceptions and return as SSE error
             traceback.print_exc()
             yield SSEErrorResponse(
-                detail=f"Failed to generate presentation outlines. Please try again. {str(e)}",
+                detail=f"An unexpected error occurred: {str(e)}"
             ).to_string()
-            return
-
-        presentation_outlines = PresentationOutlineModel(**presentation_outlines_json)
-
-        if (
-            n_slides_to_generate is not None
-            and len(presentation_outlines.slides) != n_slides_to_generate
-        ):
-            yield SSEErrorResponse(
-                detail=(
-                    "Failed to generate presentation outlines with requested "
-                    "number of slides. Please try again."
-                )
-            ).to_string()
-            return
-
-        if n_slides_to_generate is not None:
-            presentation_outlines.slides = presentation_outlines.slides[
-                :n_slides_to_generate
-            ]
-
-        if presentation.n_slides <= 0:
-            presentation.n_slides = len(presentation_outlines.slides)
-
-        presentation.outlines = presentation_outlines.model_dump()
-        presentation.title = get_presentation_title_from_presentation_outline(
-            presentation_outlines
-        )
-
-        sql_session.add(presentation)
-        await sql_session.commit()
-
-        yield SSECompleteResponse(
-            key="presentation", value=presentation.model_dump(mode="json")
-        ).to_string()
+        finally:
+            # Clean up temp directory
+            try:
+                TEMP_FILE_SERVICE.cleanup_temp_dir(temp_dir)
+            except Exception:
+                pass
 
     return StreamingResponse(inner(), media_type="text/event-stream")

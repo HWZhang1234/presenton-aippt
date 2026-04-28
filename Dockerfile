@@ -1,6 +1,4 @@
-# syntax=docker/dockerfile:1.7
-
-FROM python:3.11-slim-trixie AS fastapi-builder
+FROM python:3.11-slim-bookworm AS fastapi-builder
 
 WORKDIR /app/servers/fastapi
 
@@ -10,12 +8,12 @@ ENV UV_COMPILE_BYTECODE=1 \
 RUN python -m venv --without-pip /opt/venv \
     && pip install --no-cache-dir uv
 
-COPY servers/fastapi/pyproject.toml servers/fastapi/uv.lock ./
+COPY electron/servers/fastapi/pyproject.toml electron/servers/fastapi/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt \
     && uv pip install --python /opt/venv/bin/python -r /tmp/requirements.txt
 
-COPY servers/fastapi /app/servers/fastapi
+COPY electron/servers/fastapi /app/servers/fastapi
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python /opt/venv/bin/python --no-deps .
 # mem0/spaCy BM25 lemmatization loads en_core_web_sm at runtime; spaCy tries pip to
@@ -32,12 +30,13 @@ FROM node:20-bookworm-slim AS nextjs-builder
 WORKDIR /app/servers/nextjs
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV BUILD_TARGET=docker
 
-COPY servers/nextjs/package.json servers/nextjs/package-lock.json ./
+COPY electron/servers/nextjs/package.json electron/servers/nextjs/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
-COPY servers/nextjs /app/servers/nextjs
+COPY electron/servers/nextjs /app/servers/nextjs
 RUN npm run build \
     && rm -rf .next-build/cache
 
@@ -66,7 +65,7 @@ RUN node /app/scripts/sync-presentation-export.cjs --force \
     && npm install "sharp@^0.34.5" --include=optional --omit=dev --no-fund --no-audit --no-package-lock
 
 
-FROM python:3.11-slim-trixie AS runtime
+FROM python:3.11-slim-bookworm AS runtime
 
 WORKDIR /app
 
@@ -85,6 +84,10 @@ ENV APP_DATA_DIRECTORY=/app_data \
     START_OLLAMA=false
 
 RUN set -eux; \
+    sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list.d/debian.sources || \
+    sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list; \
+    sed -i 's|security.debian.org/debian-security|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list.d/debian.sources || \
+    sed -i 's|security.debian.org/debian-security|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list; \
     packages="ca-certificates curl nginx fontconfig imagemagick zstd"; \
     if [ "$INSTALL_LIBREOFFICE" = "true" ]; then packages="$packages libreoffice"; fi; \
     if [ "$INSTALL_TESSERACT" = "true" ]; then packages="$packages tesseract-ocr tesseract-ocr-eng"; fi; \

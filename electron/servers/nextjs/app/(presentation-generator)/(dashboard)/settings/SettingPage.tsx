@@ -20,6 +20,7 @@ import SettingSideBar from "./SettingSideBar";
 import TextProvider from "./TextProvider";
 import ImageProvider from "./ImageProvider";
 import PrivacySettings from "./PrivacySettings";
+import ConfigManagement from "@/components/ConfigManagement";
 import { IMAGE_PROVIDERS, LLM_PROVIDERS } from "@/utils/providerConstants";
 import { ImagesApi } from "@/app/(presentation-generator)/services/api/images";
 import { getApiUrl } from "@/utils/api";
@@ -41,7 +42,7 @@ const SettingsPage = () => {
   const router = useRouter();
   const pathname = usePathname();
   const [mode, setMode] = useState<'nanobanana' | 'presenton'>('presenton')
-  const [selectedProvider, setSelectedProvider] = useState<'text-provider' | 'image-provider' | 'privacy'>('text-provider')
+  const [selectedProvider, setSelectedProvider] = useState<'text-provider' | 'image-provider' | 'privacy' | 'config-management'>('text-provider')
   const userConfigState = useSelector((state: RootState) => state.userConfig);
   const [llmConfig, setLlmConfig] = useState<LLMConfig>(
     userConfigState.llm_config
@@ -406,6 +407,12 @@ const SettingsPage = () => {
             llmConfig={llmConfig}
           />}
           {mode === 'presenton' && selectedProvider === 'image-provider' && <ImageProvider llmConfig={llmConfig} setLlmConfig={setLlmConfig} />}
+          {selectedProvider === 'config-management' && (
+            <div className="w-full bg-[#F9F8F8] p-7 rounded-[20px]">
+              <h4 className="text-xl font-semibold text-gray-900 mb-6">Configuration Management</h4>
+              <ConfigManagement />
+            </div>
+          )}
           {selectedProvider === 'privacy' && <PrivacySettings />}
 
         </div>

@@ -192,6 +192,48 @@ const PresentationHeader = ({
     }
   };
 
+  const exportViaApi = async (
+    format: "pptx" | "pdf",
+    title: string
+  ): Promise<void> => {
+    trackEvent(
+      format === "pptx"
+        ? MixpanelEvent.Header_ExportAsPPTX_API_Call
+        : MixpanelEvent.Header_ExportAsPDF_API_Call
+    );
+    
+    const apiUrl = process.env.NEXT_PUBLIC_FAST_API || "http://127.0.0.1:8000";
+    const response = await fetch(`${apiUrl}/api/v1/ppt/presentation/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        presentation_id,
+        title,
+        export_as: format
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Export failed" }));
+      throw new Error(error.detail || "Export failed");
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      throw new Error("Export failed");
+    }
+
+    // Trigger browser download
+    // The path is relative to the server, we need to download it
+    const downloadUrl = `${apiUrl}/api/v1/ppt/files/download?path=${encodeURIComponent(data.path)}`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `${title}.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleExportPptx = async () => {
     if (isStreaming) return;
 
@@ -206,7 +248,16 @@ const PresentationHeader = ({
         "pptx"
       );
       const safePptxTitle = safePptxFileName.replace(/\.pptx$/i, "");
-      await exportViaIpc("pptx", safePptxTitle);
+      
+      // Check if running in Electron or Web
+      const isElectron = typeof window !== "undefined" && (window as any).electron?.exportPresentation;
+      
+      if (isElectron) {
+        await exportViaIpc("pptx", safePptxTitle);
+      } else {
+        await exportViaApi("pptx", safePptxTitle);
+      }
+      
       toast.success("PPTX exported successfully!");
     } catch (error) {
       console.error("Export failed:", error);
@@ -233,7 +284,16 @@ const PresentationHeader = ({
         "pdf"
       );
       const safePdfTitle = safePdfFileName.replace(/\.pdf$/i, "");
-      await exportViaIpc("pdf", safePdfTitle);
+      
+      // Check if running in Electron or Web
+      const isElectron = typeof window !== "undefined" && (window as any).electron?.exportPresentation;
+      
+      if (isElectron) {
+        await exportViaIpc("pdf", safePdfTitle);
+      } else {
+        await exportViaApi("pdf", safePdfTitle);
+      }
+      
       toast.success("PDF exported successfully!");
 
     } catch (err) {

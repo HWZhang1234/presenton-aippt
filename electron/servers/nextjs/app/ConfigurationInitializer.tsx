@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { setCanChangeKeys, setLLMConfig } from '@/store/slices/userConfig';
-import { hasValidLLMConfig } from '@/utils/storeHelpers';
+import { hasValidLLMConfig, loadLLMConfigFromStorage } from '@/utils/storeHelpers';
 import { usePathname, useRouter } from 'next/navigation';
 import { useDispatch } from 'react-redux';
 import { checkIfSelectedOllamaModelIsPulled } from '@/utils/providerUtils';
@@ -59,15 +59,11 @@ export function ConfigurationInitializer({ children }: { children: React.ReactNo
     if (canChangeKeys) {
       let llmConfig: LLMConfig = {};
       if (typeof window !== 'undefined' && (window as any).electron) {
+        // Electron mode: use IPC
         llmConfig = await (window as any).electron.getUserConfig();
       } else {
-        try {
-          const res = await fetch('/api/user-config');
-          llmConfig = await res.json();
-        } catch (e) {
-          console.error('Failed to fetch user config:', e);
-          llmConfig = {};
-        }
+        // Web mode: load from LocalStorage
+        llmConfig = loadLLMConfigFromStorage() || {};
       }
       if (!llmConfig.LLM) {
         llmConfig.LLM = 'openai';

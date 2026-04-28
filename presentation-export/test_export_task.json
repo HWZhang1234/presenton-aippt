@@ -1,0 +1,6 @@
+{
+  "type": "export",
+  "url": "http://localhost:3000/pdf-maker?id=test&fastapiUrl=http://127.0.0.1:8000",
+  "format": "pdf",
+  "title": "test-export"
+}

@@ -1,3 +1,38 @@
+import { ConfigStorage } from './configStorage';
+
+// Get user config headers for API requests
+export function getUserConfigHeaders(): Record<string, string> {
+  const config = ConfigStorage.load();
+  if (!config) return {};
+
+  const headers: Record<string, string> = {};
+  
+  // Add LLM configuration
+  if (config.LLM) headers['X-LLM-Provider'] = config.LLM;
+  if (config.OPENAI_API_KEY) headers['X-OpenAI-API-Key'] = config.OPENAI_API_KEY;
+  if (config.OPENAI_MODEL) headers['X-OpenAI-Model'] = config.OPENAI_MODEL;
+  if (config.GOOGLE_API_KEY) headers['X-Google-API-Key'] = config.GOOGLE_API_KEY;
+  if (config.GOOGLE_MODEL) headers['X-Google-Model'] = config.GOOGLE_MODEL;
+  if (config.ANTHROPIC_API_KEY) headers['X-Anthropic-API-Key'] = config.ANTHROPIC_API_KEY;
+  if (config.ANTHROPIC_MODEL) headers['X-Anthropic-Model'] = config.ANTHROPIC_MODEL;
+  if (config.CUSTOM_LLM_URL) headers['X-Custom-LLM-URL'] = config.CUSTOM_LLM_URL;
+  if (config.CUSTOM_LLM_API_KEY) headers['X-Custom-LLM-API-Key'] = config.CUSTOM_LLM_API_KEY;
+  if (config.CUSTOM_MODEL) headers['X-Custom-Model'] = config.CUSTOM_MODEL;
+  if (config.OLLAMA_URL) headers['X-Ollama-URL'] = config.OLLAMA_URL;
+  if (config.OLLAMA_MODEL) headers['X-Ollama-Model'] = config.OLLAMA_MODEL;
+  if (config.CODEX_MODEL) headers['X-Codex-Model'] = config.CODEX_MODEL;
+  
+  // Add image provider configuration
+  if (config.IMAGE_PROVIDER) headers['X-Image-Provider'] = config.IMAGE_PROVIDER;
+  if (config.PEXELS_API_KEY) headers['X-Pexels-API-Key'] = config.PEXELS_API_KEY;
+  if (config.PIXABAY_API_KEY) headers['X-Pixabay-API-Key'] = config.PIXABAY_API_KEY;
+  if (config.DISABLE_IMAGE_GENERATION !== undefined) {
+    headers['X-Disable-Image-Generation'] = String(config.DISABLE_IMAGE_GENERATION);
+  }
+  
+  return headers;
+}
+
 // Utility to get the FastAPI base URL
 export function getFastAPIUrl(): string {
   // Prefer Electron-preload env when available
@@ -5,14 +40,14 @@ export function getFastAPIUrl(): string {
     return (window as any).env.NEXT_PUBLIC_FAST_API;
   }
 
-  // In Electron, NEXT_PUBLIC_FAST_API is set by setupEnv in main.ts
-  if (process.env.NEXT_PUBLIC_FAST_API) {
-    return process.env.NEXT_PUBLIC_FAST_API;
-  }
-
   const queryFastApiUrl = getFastApiUrlFromQuery();
   if (queryFastApiUrl) {
     return queryFastApiUrl;
+  }
+
+  // Check Next.js public env variable (works in both server and client)
+  if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_FAST_API) {
+    return process.env.NEXT_PUBLIC_FAST_API;
   }
 
   // Safe Electron fallback to local FastAPI

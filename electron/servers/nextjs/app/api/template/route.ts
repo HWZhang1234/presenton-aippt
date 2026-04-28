@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import puppeteer from "puppeteer";
 
+// This is a dynamic API route that cannot be statically exported
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   // Check if running in Electron/static export mode
   // This route requires server-side Puppeteer execution which is not available in static exports

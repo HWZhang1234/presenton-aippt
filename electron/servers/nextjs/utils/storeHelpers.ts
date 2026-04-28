@@ -1,6 +1,7 @@
 import { setLLMConfig } from "@/store/slices/userConfig";
 import { store } from "@/store/store";
 import { LLMConfig } from "@/types/llm_config";
+import { ConfigStorage } from "./configStorage";
 
 function isProvided(value: unknown): boolean {
   return value !== "" && value !== null && value !== undefined;
@@ -157,14 +158,26 @@ export const handleSaveLLMConfig = async (llmConfig: LLMConfig) => {
     // Use Electron IPC handler
     await window.electron.setUserConfig(llmConfig);
   } else {
-    // Fallback to API route for web-based deployments
-    await fetch("/api/user-config", {
-      method: "POST",
-      body: JSON.stringify(llmConfig),
-    });
+    // Use LocalStorage for web deployments
+    ConfigStorage.save(llmConfig);
   }
 
   store.dispatch(setLLMConfig(llmConfig));
+};
+
+/**
+ * Load LLM config from LocalStorage (for web deployments)
+ */
+export const loadLLMConfigFromStorage = (): LLMConfig | null => {
+  if (typeof window === 'undefined') return null;
+  
+  // Check if running in Electron environment
+  if (window.electron) {
+    return null; // Electron will handle loading via IPC
+  }
+  
+  // Load from LocalStorage for web deployments
+  return ConfigStorage.load();
 };
 
 export const hasValidLLMConfig = (llmConfig: LLMConfig) =>

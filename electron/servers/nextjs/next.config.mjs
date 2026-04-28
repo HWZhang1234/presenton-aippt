@@ -1,12 +1,13 @@
 import { withSentryConfig } from "@sentry/nextjs";
 const isDevelopment = process.env.NODE_ENV !== 'production';
+const isDockerBuild = process.env.BUILD_TARGET === 'docker';
 
 const nextConfig = {
   reactStrictMode: false,
   distDir: ".next-build",
-  // This Next.js app is always bundled for Electron, so we can
-  // unconditionally use static export.
-  output: "export",
+  // For Docker builds, use standalone output for server-side rendering
+  // For Electron builds, use static export
+  output: isDockerBuild ? "standalone" : "export",
   ...(isDevelopment
     ? {
         allowedDevOrigins: [

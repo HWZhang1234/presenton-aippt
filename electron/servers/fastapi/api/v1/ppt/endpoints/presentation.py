@@ -341,99 +341,106 @@ async def stream_presentation(
     image_generation_service = ImageGenerationService(get_images_directory())
 
     async def inner():
-        structure = presentation.get_structure()
-        layout = presentation.get_layout()
-        outline = presentation.get_presentation_outline()
-        image_urls_for_slides = get_images_for_slides_from_outline(outline.slides)
+        try:
+            structure = presentation.get_structure()
+            layout = presentation.get_layout()
+            outline = presentation.get_presentation_outline()
+            image_urls_for_slides = get_images_for_slides_from_outline(outline.slides)
 
-        # These tasks will be gathered and awaited after all slides are generated
-        async_assets_generation_tasks = []
+            # These tasks will be gathered and awaited after all slides are generated
+            async_assets_generation_tasks = []
 
-        slides: List[SlideModel] = []
-        yield SSEResponse(
-            event="response",
-            data=json.dumps({"type": "chunk", "chunk": '{ "slides": [ '}),
-        ).to_string()
-        for i, slide_layout_index in enumerate(structure.slides):
-            slide_layout = layout.slides[slide_layout_index]
+            slides: List[SlideModel] = []
+            yield SSEResponse(
+                event="response",
+                data=json.dumps({"type": "chunk", "chunk": '{ "slides": [ '}),
+            ).to_string()
+            for i, slide_layout_index in enumerate(structure.slides):
+                slide_layout = layout.slides[slide_layout_index]
 
-            try:
-                slide_content = await get_slide_content_from_type_and_outline(
-                    slide_layout,
-                    outline.slides[i],
-                    presentation.language,
-                    presentation.tone,
-                    presentation.verbosity,
-                    presentation.instructions,
+                try:
+                    slide_content = await get_slide_content_from_type_and_outline(
+                        slide_layout,
+                        outline.slides[i],
+                        presentation.language,
+                        presentation.tone,
+                        presentation.verbosity,
+                        presentation.instructions,
+                    )
+                except HTTPException as e:
+                    yield SSEErrorResponse(detail=e.detail).to_string()
+                    return
+
+                slide = SlideModel(
+                    presentation=id,
+                    layout_group=layout.name,
+                    layout=slide_layout.id,
+                    index=i,
+                    speaker_note=slide_content.get("__speaker_note__", ""),
+                    content=slide_content,
                 )
-            except HTTPException as e:
-                yield SSEErrorResponse(detail=e.detail).to_string()
-                return
+                slides.append(slide)
 
-            slide = SlideModel(
-                presentation=id,
-                layout_group=layout.name,
-                layout=slide_layout.id,
-                index=i,
-                speaker_note=slide_content.get("__speaker_note__", ""),
-                content=slide_content,
-            )
-            slides.append(slide)
+                # This will mutate slide and add placeholder assets
+                process_slide_add_placeholder_assets(slide)
 
-            # This will mutate slide and add placeholder assets
-            process_slide_add_placeholder_assets(slide)
-
-            # This will mutate slide - start task immediately so it runs in parallel with next slide LLM generation
-            async_assets_generation_tasks.append(
-                asyncio.create_task(
-                    process_slide_and_fetch_assets(
-                        image_generation_service,
-                        slide,
-                        outline_image_urls=(
-                            image_urls_for_slides[i]
-                            if i < len(image_urls_for_slides)
-                            else None
-                        ),
+                # This will mutate slide - start task immediately so it runs in parallel with next slide LLM generation
+                async_assets_generation_tasks.append(
+                    asyncio.create_task(
+                        process_slide_and_fetch_assets(
+                            image_generation_service,
+                            slide,
+                            outline_image_urls=(
+                                image_urls_for_slides[i]
+                                if i < len(image_urls_for_slides)
+                                else None
+                            ),
+                        )
                     )
                 )
-            )
+
+                yield SSEResponse(
+                    event="response",
+                    data=json.dumps({"type": "chunk", "chunk": slide.model_dump_json()}),
+                ).to_string()
 
             yield SSEResponse(
                 event="response",
-                data=json.dumps({"type": "chunk", "chunk": slide.model_dump_json()}),
+                data=json.dumps({"type": "chunk", "chunk": " ] }"}),
             ).to_string()
 
-        yield SSEResponse(
-            event="response",
-            data=json.dumps({"type": "chunk", "chunk": " ] }"}),
-        ).to_string()
+            generated_assets_lists = await asyncio.gather(*async_assets_generation_tasks)
+            generated_assets = []
+            for assets_list in generated_assets_lists:
+                generated_assets.extend(assets_list)
 
-        generated_assets_lists = await asyncio.gather(*async_assets_generation_tasks)
-        generated_assets = []
-        for assets_list in generated_assets_lists:
-            generated_assets.extend(assets_list)
+            # Moved this here to make sure new slides are generated before deleting the old ones
+            await sql_session.execute(
+                delete(SlideModel).where(SlideModel.presentation == id)
+            )
+            await sql_session.commit()
 
-        # Moved this here to make sure new slides are generated before deleting the old ones
-        await sql_session.execute(
-            delete(SlideModel).where(SlideModel.presentation == id)
-        )
-        await sql_session.commit()
+            sql_session.add(presentation)
+            sql_session.add_all(slides)
+            sql_session.add_all(generated_assets)
+            await sql_session.commit()
 
-        sql_session.add(presentation)
-        sql_session.add_all(slides)
-        sql_session.add_all(generated_assets)
-        await sql_session.commit()
+            response = PresentationWithSlides(
+                **presentation.model_dump(),
+                slides=slides,
+                fonts=await _resolve_presentation_fonts(presentation, slides, sql_session),
+            )
 
-        response = PresentationWithSlides(
-            **presentation.model_dump(),
-            slides=slides,
-            fonts=await _resolve_presentation_fonts(presentation, slides, sql_session),
-        )
-
-        yield SSECompleteResponse(
-            key="presentation",
-            value=response.model_dump(mode="json"),
-        ).to_string()
+            yield SSECompleteResponse(
+                key="presentation",
+                value=response.model_dump(mode="json"),
+            ).to_string()
+        except Exception as e:
+            # Catch any unhandled exceptions and return as SSE error
+            traceback.print_exc()
+            yield SSEErrorResponse(
+                detail=f"An unexpected error occurred: {str(e)}"
+            ).to_string()
 
     return StreamingResponse(inner(), media_type="text/event-stream")
 
@@ -1027,3 +1034,38 @@ async def derive_presentation_from_existing_one(
         **presentation_and_path.model_dump(),
         edit_path=f"/presentation?id={new_presentation.id}",
     )
+
+
+@PRESENTATION_ROUTER.post("/export")
+async def export_presentation_endpoint(
+    presentation_id: Annotated[uuid.UUID, Body()],
+    title: Annotated[str, Body()],
+    export_as: Annotated[Literal["pptx", "pdf"], Body()] = "pptx",
+    sql_session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Export an existing presentation to PPTX or PDF format.
+    Returns the file path for download.
+    """
+    presentation = await sql_session.get(PresentationModel, presentation_id)
+    if not presentation:
+        raise HTTPException(status_code=404, detail="Presentation not found")
+
+    try:
+        presentation_and_path = await export_presentation(
+            presentation_id, title, export_as
+        )
+        
+        # Return the file path - frontend can use this to download
+        return {
+            "success": True,
+            "path": presentation_and_path.path,
+            "presentation_id": str(presentation_id),
+            "format": export_as,
+        }
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Export failed: {str(e)}"
+        )

@@ -1,6 +1,7 @@
 import os
 import json
 
+from fastapi import Request
 from models.user_config import UserConfig
 from utils.get_env import (
     get_anthropic_api_key_env,
@@ -248,3 +249,83 @@ def save_codex_tokens_to_user_config() -> None:
             json.dump(existing, f)
     except Exception:
         pass
+
+
+def update_env_with_request_headers(request: Request) -> bool:
+    """
+    Read user configuration from HTTP request headers or query parameters and set environment variables.
+    This is used for web mode where configuration is passed via headers or query params (for SSE).
+    
+    Returns True if any headers/params were found and applied, False otherwise.
+    """
+    config_found = False
+    
+    # Map of header/param names to setter functions
+    config_mapping = {
+        "x-llm-provider": set_llm_provider_env,
+        "x-openai-api-key": set_openai_api_key_env,
+        "x-openai-model": set_openai_model_env,
+        "x-google-api-key": set_google_api_key_env,
+        "x-google-model": set_google_model_env,
+        "x-anthropic-api-key": set_anthropic_api_key_env,
+        "x-anthropic-model": set_anthropic_model_env,
+        "x-ollama-url": set_ollama_url_env,
+        "x-ollama-model": set_ollama_model_env,
+        "x-custom-llm-url": set_custom_llm_url_env,
+        "x-custom-llm-api-key": set_custom_llm_api_key_env,
+        "x-custom-model": set_custom_model_env,
+        "x-image-provider": set_image_provider_env,
+        "x-disable-image-generation": set_disable_image_generation_env,
+        "x-pixabay-api-key": set_pixabay_api_key_env,
+        "x-pexels-api-key": set_pexels_api_key_env,
+        "x-comfyui-url": set_comfyui_url_env,
+        "x-comfyui-workflow": set_comfyui_workflow_env,
+        "x-dall-e-3-quality": set_dall_e_3_quality_env,
+        "x-gpt-image-1-5-quality": set_gpt_image_1_5_quality_env,
+        "x-tool-calls": set_tool_calls_env,
+        "x-disable-thinking": set_disable_thinking_env,
+        "x-extended-reasoning": set_extended_reasoning_env,
+        "x-web-grounding": set_web_grounding_env,
+        "x-codex-model": set_codex_model_env,
+        "x-codex-access-token": set_codex_access_token_env,
+        "x-codex-refresh-token": set_codex_refresh_token_env,
+        "x-codex-token-expires": set_codex_token_expires_env,
+        "x-codex-account-id": set_codex_account_id_env,
+        "x-codex-username": set_codex_username_env,
+        "x-codex-email": set_codex_email_env,
+        "x-codex-is-pro": set_codex_is_pro_env,
+    }
+    
+    # First try to read from headers
+    for config_name, setter_func in config_mapping.items():
+        config_value = request.headers.get(config_name)
+        if config_value:
+            setter_func(config_value)
+            config_found = True
+            print(f"[Config Headers] Set {config_name}: {config_value[:20] if len(config_value) > 20 else config_value}...")
+    
+    # If no headers found, try query parameters (for EventSource/SSE which doesn't support headers)
+    if not config_found:
+        for config_name, setter_func in config_mapping.items():
+            # Query params use capitalized format (X-LLM-Provider, X-Custom-LLM-URL, etc.)
+            # Convert x-llm-provider to X-LLM-Provider with special handling for acronyms
+            parts = config_name.split('-')
+            capitalized_parts = []
+            for part in parts:
+                # Keep common acronyms in uppercase
+                if part.upper() in ['LLM', 'URL', 'API', 'ID']:
+                    capitalized_parts.append(part.upper())
+                else:
+                    capitalized_parts.append(part.capitalize())
+            capitalized_name = '-'.join(capitalized_parts)
+            
+            config_value = request.query_params.get(capitalized_name)
+            if config_value:
+                setter_func(config_value)
+                config_found = True
+                print(f"[Config Query] Set {config_name}: {config_value[:20] if len(config_value) > 20 else config_value}...")
+    
+    if config_found:
+        print(f"[Config] Applied configuration from request")
+    
+    return config_found

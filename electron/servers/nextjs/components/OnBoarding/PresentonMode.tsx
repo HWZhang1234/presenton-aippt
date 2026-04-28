@@ -781,7 +781,7 @@ const PresentonMode = ({ currentStep, setStep }: { currentStep: number, setStep:
                     </div>
 
                 </ToolTip>
-                <div className={` flex items-center gap-6 ${llmConfig.DISABLE_IMAGE_GENERATION ? "" : "mb-[42px]"}`}>
+                <div className={` flex items-center gap-6 ${llmConfig.DISABLE_IMAGE_GENERATION ? "" : "mb-4"}`}>
                     <div className='w-[74px] h-[74px] px-[13.5px] py-[14.2px] rounded-[4px] flex items-center justify-center'
                         style={{ backgroundColor: '#F4F3FF' }}
                     >
@@ -795,6 +795,25 @@ const PresentonMode = ({ currentStep, setStep }: { currentStep: number, setStep:
                         </p>
                     </div>
                 </div>
+                {!llmConfig.DISABLE_IMAGE_GENERATION && (
+                    <div className='flex items-start gap-2 bg-[#EFF6FF] border border-[#BFDBFE] rounded-lg px-4 py-3 mb-6'>
+                        <Info className='w-4 h-4 text-[#3B82F6] mt-0.5 flex-shrink-0' />
+                        <div className='text-sm text-[#1E40AF]'>
+                            <p className='font-medium'>Free API Keys Available</p>
+                            <p className='text-[#3B82F6] mt-1'>
+                                Get a free Pexels API key at{' '}
+                                <a 
+                                    href="https://www.pexels.com/api/" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className='underline hover:text-[#1E40AF] font-medium'
+                                >
+                                    pexels.com/api
+                                </a>
+                            </p>
+                        </div>
+                    </div>
+                )}
                 {!llmConfig.DISABLE_IMAGE_GENERATION && (
                     <div className='flex flex-col gap-4'>
                         {/* Image Provider Selection */}

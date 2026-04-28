@@ -1,5 +1,5 @@
 import { LLMConfig } from "@/types/llm_config";
-import { getApiUrl } from "@/utils/api";
+import { getApiUrl, getUserConfigHeaders } from "@/utils/api";
 
 export interface OllamaModel {
   label: string;
@@ -89,7 +89,9 @@ export const changeProvider = (
 
 export const checkIfSelectedOllamaModelIsPulled = async (ollamaModel: string) => {
   try {
-    const response = await fetch(getApiUrl('/api/v1/ppt/ollama/models/available'));
+    const response = await fetch(getApiUrl('/api/v1/ppt/ollama/models/available'), {
+      headers: getUserConfigHeaders(),
+    });
     const models = await response.json();
     const pulledModels = models.map((model: any) => model.name);
     return pulledModels.includes(ollamaModel);
@@ -188,7 +190,10 @@ export const pullOllamaModel = async (
       polling = true;
       try {
         const response = await fetch(
-          getApiUrl(`/api/v1/ppt/ollama/model/pull?model=${model}`)
+          getApiUrl(`/api/v1/ppt/ollama/model/pull?model=${model}`),
+          {
+            headers: getUserConfigHeaders(),
+          }
         );
         if (settled) return;
         if (response.status === 200) {

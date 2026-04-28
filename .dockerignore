@@ -33,6 +33,11 @@ electron/resources/*
 !electron/resources/document-extraction
 electron/resources/document-extraction/*
 !electron/resources/document-extraction/liteparse_runner.mjs
+!electron/servers
+electron/servers/fastapi/tests
+electron/servers/fastapi/.venv
+electron/servers/nextjs/node_modules
+electron/servers/nextjs/.next
 
 servers/fastapi/tmp
 servers/fastapi/debug

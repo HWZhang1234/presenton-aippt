@@ -82,8 +82,15 @@ LOGGER = logging.getLogger(__name__)
 class LLMClient:
     def __init__(self):
         self.llm_provider = get_llm_provider()
-        self._client = self._get_client()
+        self._client = None  # Lazy initialization
         self.tool_calls_handler = LLMToolCallsHandler(self)
+    
+    @property
+    def client(self):
+        """Lazy client initialization - creates client on first access using current env vars"""
+        if self._client is None:
+            self._client = self._get_client()
+        return self._client
 
     # ? Use tool calls
     def use_tool_calls_for_structured_output(self) -> bool:
@@ -209,15 +216,59 @@ class LLMClient:
         )
 
     def _get_custom_client(self):
-        if not get_custom_llm_url_env():
+        import httpx
+        import os
+        
+        url = get_custom_llm_url_env()
+        api_key = get_custom_llm_api_key_env() or "null"
+        
+        if not url:
             raise HTTPException(
                 status_code=400,
                 detail="Custom LLM URL is not set",
             )
-        return AsyncOpenAI(
-            base_url=get_custom_llm_url_env(),
-            api_key=get_custom_llm_api_key_env() or "null",
-        )
+        
+        print(f"[LLM Client] Creating custom client with URL: {url}, API Key length: {len(api_key)}")
+        
+        # Log the model being used
+        from utils.llm_provider import get_model
+        try:
+            model = get_model()
+            print(f"[LLM Client] Using model: {model}")
+        except Exception as e:
+            print(f"[LLM Client] Could not get model: {e}")
+        
+        # Check if SSL verification should be disabled
+        disable_ssl = os.getenv("DISABLE_SSL_VERIFY", "false").lower() == "true"
+        
+        # Get proxy settings
+        http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+        https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+        
+        # Configure httpx client with proxy and SSL settings
+        client_kwargs = {
+            "base_url": url,
+            "api_key": api_key,
+            "timeout": 120.0,
+            "max_retries": 2,
+        }
+        
+        if disable_ssl or http_proxy or https_proxy:
+            httpx_kwargs = {}
+            if disable_ssl:
+                httpx_kwargs["verify"] = False
+                print(f"[LLM Client] SSL verification disabled")
+            if https_proxy:
+                httpx_kwargs["proxy"] = https_proxy
+                print(f"[LLM Client] Using HTTPS proxy: {https_proxy}")
+            elif http_proxy:
+                httpx_kwargs["proxy"] = http_proxy
+                print(f"[LLM Client] Using HTTP proxy: {http_proxy}")
+            
+            http_client = httpx.AsyncClient(**httpx_kwargs)
+            client_kwargs["http_client"] = http_client
+        
+        return AsyncOpenAI(**client_kwargs)
 
     def _get_codex_headers(self) -> dict:
         """Return the HTTP headers required for Codex Responses API requests.
@@ -336,7 +387,7 @@ class LLMClient:
         extra_body: Optional[dict] = None,
         depth: int = 0,
     ) -> str | None:
-        client: AsyncOpenAI = self._client
+        client: AsyncOpenAI = self.client
         response = await client.chat.completions.create(
             model=model,
             messages=[message.model_dump() for message in messages],
@@ -393,7 +444,7 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         depth: int = 0,
     ) -> str | None:
-        client: genai.Client = self._client
+        client: genai.Client = self.client
 
         google_tools = None
         if tools:
@@ -461,7 +512,7 @@ class LLMClient:
         tools: Optional[List[dict]] = None,
         depth: int = 0,
     ) -> str | None:
-        client: AsyncAnthropic = self._client
+        client: AsyncAnthropic = self.client
 
         response: AnthropicMessage = await client.messages.create(
             model=model,
@@ -554,7 +605,7 @@ class LLMClient:
         handlers and recurse (same pattern as _generate_openai).
         """
         _MAX_RECURSION_DEPTH = 5
-        client: AsyncOpenAI = self._client
+        client: AsyncOpenAI = self.client
 
         # Flatten tools to Responses API format
         responses_tools: Optional[List[dict]] = None
@@ -748,7 +799,7 @@ class LLMClient:
         extra_body: Optional[dict] = None,
         depth: int = 0,
     ) -> dict | None:
-        client: AsyncOpenAI = self._client
+        client: AsyncOpenAI = self.client
         response_schema = response_format
         all_tools = [*tools] if tools else None
 
@@ -906,7 +957,7 @@ class LLMClient:
         tools: Optional[List[dict]] = None,
         depth: int = 0,
     ) -> dict | None:
-        client: genai.Client = self._client
+        client: genai.Client = self.client
 
         google_tools = None
         if tools:
@@ -1006,7 +1057,7 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         depth: int = 0,
     ):
-        client: AsyncAnthropic = self._client
+        client: AsyncAnthropic = self.client
         response: AnthropicMessage = await client.messages.create(
             model=model,
             system=self._get_system_prompt(messages),
@@ -1307,7 +1358,7 @@ class LLMClient:
         extra_body: Optional[dict] = None,
         depth: int = 0,
     ) -> AsyncGenerator[str, None]:
-        client: AsyncOpenAI = self._client
+        client: AsyncOpenAI = self.client
 
         tool_calls: List[LLMToolCall] = []
         current_index = 0
@@ -1403,7 +1454,7 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         depth: int = 0,
     ) -> AsyncGenerator[str, None]:
-        client: genai.Client = self._client
+        client: genai.Client = self.client
 
         google_tools = None
         if tools:
@@ -1475,7 +1526,7 @@ class LLMClient:
         tools: Optional[List[dict]] = None,
         depth: int = 0,
     ):
-        client: AsyncAnthropic = self._client
+        client: AsyncAnthropic = self.client
 
         tool_calls: List[AnthropicToolCall] = []
         async with client.messages.stream(
@@ -1547,7 +1598,7 @@ class LLMClient:
         client: AsyncOpenAI = (
             self._get_codex_client()
             if self.llm_provider == LLMProvider.CODEX
-            else self._client
+            else self.client
         )
 
         # Flatten tools to Responses API format
@@ -1768,7 +1819,7 @@ class LLMClient:
         extra_body: Optional[dict] = None,
         depth: int = 0,
     ) -> AsyncGenerator[str, None]:
-        client: AsyncOpenAI = self._client
+        client: AsyncOpenAI = self.client
 
         response_schema = response_format
         all_tools = [*tools] if tools else None
@@ -1977,7 +2028,7 @@ class LLMClient:
             - Streaming-safe structured JSON assembly
             - Robust multi-tool recursive execution
         """
-        client: AsyncOpenAI = self._client
+        client: AsyncOpenAI = self.client
         response_schema = response_format
         # Apply strict schema once at root (includes array "items" fix at lines 135–155).
         if strict and depth == 0:
@@ -2193,7 +2244,7 @@ class LLMClient:
         depth: int = 0,
     ) -> AsyncGenerator[str, None]:
 
-        client: genai.Client = self._client
+        client: genai.Client = self.client
 
         google_tools = None
         if tools:
@@ -2298,7 +2349,7 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         depth: int = 0,
     ) -> AsyncGenerator[str, None]:
-        client: AsyncAnthropic = self._client
+        client: AsyncAnthropic = self.client
 
         tool_calls: List[AnthropicToolCall] = []
         has_response_schema_tool_call = False
@@ -2479,7 +2530,7 @@ class LLMClient:
 
     # ? Web search
     async def _search_openai(self, query: str) -> str:
-        client: AsyncOpenAI = self._client
+        client: AsyncOpenAI = self.client
         response = await client.responses.create(
             model=get_model(),
             tools=[
@@ -2492,7 +2543,7 @@ class LLMClient:
         return response.output_text
 
     async def _search_google(self, query: str) -> str:
-        client: genai.Client = self._client
+        client: genai.Client = self.client
         grounding_tool = GoogleTool(google_search=GoogleSearch())
         config = GenerateContentConfig(tools=[grounding_tool])
 
@@ -2505,7 +2556,7 @@ class LLMClient:
         return response.text
 
     async def _search_anthropic(self, query: str) -> str:
-        client: AsyncAnthropic = self._client
+        client: AsyncAnthropic = self.client
 
         response = await client.messages.create(
             model=get_model(),
