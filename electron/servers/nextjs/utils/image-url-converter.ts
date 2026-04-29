@@ -1,4 +1,4 @@
-import { getFastAPIUrl } from "./api";
+import { getApiUrl } from "./api";
 
 function normalizePathSeparators(value: string): string {
   return value.replace(/\\/g, "/");
@@ -36,10 +36,10 @@ function toServedPath(rawPath: string): string {
 
 function toFastApiStaticUrl(fileSrc: string): string {
   try {
-    const baseUrl = getFastAPIUrl();
     const url = new URL(fileSrc);
     const servedPath = toServedPath(url.pathname);
-    return `${baseUrl}${servedPath}`;
+    const apiUrl = getApiUrl(servedPath);
+    return new URL(apiUrl, window.location.origin).toString();
   } catch {
     // If URL parsing fails, leave as-is
     return fileSrc;
@@ -53,7 +53,8 @@ function normalizeImageSrc(src: string): string {
       const url = new URL(src);
       const servedPath = toServedPath(url.pathname);
       if (servedPath.startsWith("/app_data/") || servedPath.startsWith("/static/")) {
-        return `${getFastAPIUrl()}${servedPath}`;
+        const apiUrl = getApiUrl(servedPath);
+        return new URL(apiUrl, window.location.origin).toString();
       }
       return src;
     } catch {

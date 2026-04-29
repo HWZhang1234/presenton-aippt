@@ -8,7 +8,7 @@ import {
 import { jsonrepair } from "jsonrepair";
 import { toast } from "sonner";
 import { MixpanelEvent, trackEvent } from "@/utils/mixpanel";
-import { getFastAPIUrl, resolveBackendAssetUrl } from "@/utils/api";
+import { getApiUrl, resolveBackendAssetUrl, getUserConfigHeaders } from "@/utils/api";
 
 const MAX_STREAM_RETRIES = 3;
 const STREAM_RETRY_DELAY_MS = 1_000;
@@ -105,9 +105,16 @@ export const usePresentationStreaming = (
 
     const openStream = () => {
       closeEventSource();
-      eventSource = new EventSource(
-        `${getFastAPIUrl()}/api/v1/ppt/presentation/stream/${presentationId}`
-      );
+      const streamUrl = getApiUrl(`/api/v1/ppt/presentation/stream/${presentationId}`);
+      const absoluteUrl = new URL(streamUrl, window.location.origin);
+
+      // EventSource doesn't support custom headers, so we need to pass config as URL params
+      const userConfigHeaders = getUserConfigHeaders();
+      Object.entries(userConfigHeaders).forEach(([key, value]) => {
+        absoluteUrl.searchParams.set(key, value);
+      });
+
+      eventSource = new EventSource(absoluteUrl.toString());
 
       eventSource.addEventListener("response", (event) => {
         let data: any;

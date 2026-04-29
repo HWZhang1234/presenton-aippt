@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { setOutlines } from "@/store/slices/presentationGeneration";
 import { jsonrepair } from "jsonrepair";
 import { RootState } from "@/store/store";
-import { getFastAPIUrl, getUserConfigHeaders } from "@/utils/api";
+import { getApiUrl, getUserConfigHeaders } from "@/utils/api";
 
 const MAX_STREAM_RETRIES = 3;
 const STREAM_RETRY_DELAY_MS = 1_000;
@@ -83,14 +83,15 @@ export const useOutlineStreaming = (presentationId: string | null) => {
 
     const openStream = () => {
       closeEventSource();
-      
+
       // Build URL with config headers as query parameters
       const configHeaders = getUserConfigHeaders();
-      const url = new URL(`${getFastAPIUrl()}/api/v1/ppt/outlines/stream/${presentationId}`);
+      const baseUrl = getApiUrl(`/api/v1/ppt/outlines/stream/${presentationId}`);
+      const url = new URL(baseUrl, window.location.origin);
       Object.entries(configHeaders).forEach(([key, value]) => {
         url.searchParams.append(key, value);
       });
-      
+
       eventSource = new EventSource(url.toString());
 
       eventSource.addEventListener("response", (event) => {

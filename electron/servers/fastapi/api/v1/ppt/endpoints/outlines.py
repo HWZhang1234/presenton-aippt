@@ -3,7 +3,7 @@ import json
 import traceback
 import uuid
 import dirtyjson
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,14 +23,20 @@ from utils.outline_utils import (
     get_presentation_title_from_presentation_outline,
 )
 from utils.llm_calls.generate_presentation_outlines import generate_ppt_outline
+from utils.user_config import update_env_with_request_headers
 
 OUTLINES_ROUTER = APIRouter(prefix="/outlines", tags=["Outlines"])
 
 
 @OUTLINES_ROUTER.get("/stream/{id}")
 async def stream_outlines(
-    id: uuid.UUID, sql_session: AsyncSession = Depends(get_async_session)
+    id: uuid.UUID,
+    request: Request,
+    sql_session: AsyncSession = Depends(get_async_session)
 ):
+    # Apply user configuration from request headers or query parameters (for EventSource/SSE)
+    update_env_with_request_headers(request)
+
     presentation = await sql_session.get(PresentationModel, id)
 
     if not presentation:

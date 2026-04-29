@@ -47,8 +47,17 @@ export const useAutoSave = ({
                 setIsSaving(true);
                 console.log('🔄 Auto-saving presentation data...');
 
+                // Ensure data has required id field for API
+                const updatePayload = {
+                    id: data.id,
+                    title: data.title,
+                    n_slides: data.n_slides,
+                    theme: data.theme,
+                    slides: data.slides,
+                };
+
                 // Call the API to update presentation content
-                await PresentationGenerationApi.updatePresentationContent(data);
+                await PresentationGenerationApi.updatePresentationContent(updatePayload);
 
                 // Update last saved data reference
                 lastSavedDataRef.current = currentDataString;

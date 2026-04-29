@@ -31,12 +31,28 @@ WORKDIR /app/servers/nextjs
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV BUILD_TARGET=docker
+ENV NODE_TLS_REJECT_UNAUTHORIZED=0
+ENV NEXT_FONT_GOOGLE_SKIP_VALIDATING=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 COPY electron/servers/nextjs/package.json electron/servers/nextjs/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
 COPY electron/servers/nextjs /app/servers/nextjs
+
+# Temporarily patch Google Fonts for Docker build using Node.js
+RUN node -e "\
+const fs = require('fs'); \
+const content = fs.readFileSync('app/layout.tsx', 'utf8'); \
+const patched = content \
+  .replace('import { Syne, Unbounded } from \"next/font/google\";', '// import { Syne, Unbounded } from \"next/font/google\";') \
+  .replace(/const syne = Syne\({[^}]+}\);/s, '// const syne = Syne({ ... });') \
+  .replace(/const unbounded = Unbounded\({[^}]+}\);/s, '// const unbounded = Unbounded({ ... });') \
+  .replace('\${unbounded.variable}', '') \
+  .replace('\${syne.variable}', ''); \
+fs.writeFileSync('app/layout.tsx', patched);"
+
 RUN npm run build \
     && rm -rf .next-build/cache
 
@@ -71,6 +87,8 @@ WORKDIR /app
 
 ARG INSTALL_TESSERACT=true
 ARG INSTALL_LIBREOFFICE=true
+ARG HTTP_PROXY=http://secure-proxy2.qualcomm.com:9090
+ARG HTTPS_PROXY=http://secure-proxy2.qualcomm.com:9090
 
 # LiteParse uses Node + @llamaindex/liteparse (same runner as Electron); OCR uses Tesseract.
 ENV APP_DATA_DIRECTORY=/app_data \
@@ -81,21 +99,72 @@ ENV APP_DATA_DIRECTORY=/app_data \
     PRESENTON_APP_ROOT=/app \
     PATH="/opt/venv/bin:${PATH}" \
     NODE_ENV=production \
-    START_OLLAMA=false
+    START_OLLAMA=false \
+    HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    http_proxy=${HTTP_PROXY} \
+    https_proxy=${HTTPS_PROXY} \
+    NO_PROXY=localhost,127.0.0.1,::1,0.0.0.0 \
+    no_proxy=localhost,127.0.0.1,::1,0.0.0.0 \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
-RUN set -eux; \
-    sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list.d/debian.sources || \
-    sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list; \
-    sed -i 's|security.debian.org/debian-security|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list.d/debian.sources || \
-    sed -i 's|security.debian.org/debian-security|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list; \
-    packages="ca-certificates curl nginx fontconfig imagemagick zstd"; \
-    if [ "$INSTALL_LIBREOFFICE" = "true" ]; then packages="$packages libreoffice"; fi; \
-    if [ "$INSTALL_TESSERACT" = "true" ]; then packages="$packages tesseract-ocr tesseract-ocr-eng"; fi; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends $packages; \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -; \
-    apt-get install -y --no-install-recommends nodejs; \
-    rm -rf /var/lib/apt/lists/*
+# 配置 apt 使用代理并设置超时重试
+RUN echo "Acquire::http::Proxy \"${HTTP_PROXY}\";" > /etc/apt/apt.conf.d/proxy.conf && \
+    echo "Acquire::https::Proxy \"${HTTPS_PROXY}\";" >> /etc/apt/apt.conf.d/proxy.conf && \
+    echo "Acquire::http::Timeout \"300\";" >> /etc/apt/apt.conf.d/proxy.conf && \
+    echo "Acquire::https::Timeout \"300\";" >> /etc/apt/apt.conf.d/proxy.conf && \
+    echo "Acquire::Retries \"3\";" >> /etc/apt/apt.conf.d/proxy.conf
+
+# 分批安装软件包，提高稳定性
+# 第一批：基础工具和 Chrome 依赖
+RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+    ca-certificates \
+    curl \
+    nginx \
+    fontconfig \
+    imagemagick \
+    zstd \
+    wget \
+    gnupg
+
+# 第二批：安装 Chrome 和 Puppeteer 依赖
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
+    && sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends --fix-missing \
+    google-chrome-stable \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    fonts-thai-tlwg \
+    fonts-kacst \
+    fonts-freefont-ttf \
+    libxss1 \
+    libxtst6 \
+    libgbm1 \
+    libnss3 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libgtk-3-0 \
+    libglib2.0-0
+
+# 第二批：安装 LibreOffice（大包）
+RUN if [ "$INSTALL_LIBREOFFICE" = "true" ]; then \
+        apt-get install -y --no-install-recommends --fix-missing libreoffice; \
+    fi
+
+# 第三批：安装 Tesseract OCR
+RUN if [ "$INSTALL_TESSERACT" = "true" ]; then \
+        apt-get install -y --no-install-recommends --fix-missing \
+        tesseract-ocr \
+        tesseract-ocr-eng; \
+    fi
+
+# Install Node.js 20 using NodeSource repository
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs
+
+# Clean up
+RUN rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /app/scripts /app/servers/fastapi /app/servers/nextjs
 

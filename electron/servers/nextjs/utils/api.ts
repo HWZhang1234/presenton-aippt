@@ -50,8 +50,10 @@ export function getFastAPIUrl(): string {
     return process.env.NEXT_PUBLIC_FAST_API;
   }
 
-  // Safe Electron fallback to local FastAPI
-  return "http://127.0.0.1:8000";
+  // In Docker/production, use relative URL (empty string) so nginx can proxy
+  // In Electron, use localhost
+  const isElectron = typeof window !== "undefined" && (window as any).electron;
+  return isElectron ? "http://127.0.0.1:8000" : "";
 }
 
 function getFastApiUrlFromQuery(): string | null {
@@ -129,7 +131,8 @@ export function resolveBackendAssetUrl(path?: string): string {
     try {
       const parsed = new URL(trimmedPath);
       if (hasBackendAssetPrefix(parsed.pathname)) {
-        return `${getFastAPIUrl()}${parsed.pathname}${parsed.search}${parsed.hash}`;
+        // Use getApiUrl to respect nginx proxy in Docker environments
+        return getApiUrl(`${parsed.pathname}${parsed.search}${parsed.hash}`);
       }
       return trimmedPath;
     } catch {
@@ -139,7 +142,8 @@ export function resolveBackendAssetUrl(path?: string): string {
 
   const normalizedPath = withLeadingSlash(trimmedPath);
   if (hasBackendAssetPrefix(normalizedPath)) {
-    return `${getFastAPIUrl()}${normalizedPath}`;
+    // Use getApiUrl to respect nginx proxy in Docker environments
+    return getApiUrl(normalizedPath);
   }
 
   return trimmedPath;

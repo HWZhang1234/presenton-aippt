@@ -201,8 +201,10 @@ const PresentationHeader = ({
         ? MixpanelEvent.Header_ExportAsPPTX_API_Call
         : MixpanelEvent.Header_ExportAsPDF_API_Call
     );
-    
-    const apiUrl = process.env.NEXT_PUBLIC_FAST_API || "http://127.0.0.1:8000";
+
+    // Use relative URL if NEXT_PUBLIC_FAST_API is not set (Docker/production)
+    // This allows nginx to proxy the request to FastAPI
+    const apiUrl = process.env.NEXT_PUBLIC_FAST_API || "";
     const response = await fetch(`${apiUrl}/api/v1/ppt/presentation/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -235,14 +237,21 @@ const PresentationHeader = ({
   };
 
   const handleExportPptx = async () => {
-    if (isStreaming) return;
+    if (isStreaming || !presentationData) return;
 
     try {
       toast.info("Exporting PPTX...");
       setIsExporting(true);
       // Save the presentation data before exporting
       trackEvent(MixpanelEvent.Header_UpdatePresentationContent_API_Call);
-      await PresentationGenerationApi.updatePresentationContent(presentationData);
+      const updatePayload = {
+        id: presentationData.id,
+        title: presentationData.title,
+        n_slides: presentationData.n_slides,
+        theme: presentationData.theme,
+        slides: presentationData.slides,
+      };
+      await PresentationGenerationApi.updatePresentationContent(updatePayload);
       const safePptxFileName = buildSafeExportFileName(
         presentationData?.title,
         "pptx"
@@ -271,14 +280,21 @@ const PresentationHeader = ({
   };
 
   const handleExportPdf = async () => {
-    if (isStreaming) return;
+    if (isStreaming || !presentationData) return;
 
     try {
       toast.info("Exporting PDF...");
       setIsExporting(true);
       // Save the presentation data before exporting
       trackEvent(MixpanelEvent.Header_UpdatePresentationContent_API_Call);
-      await PresentationGenerationApi.updatePresentationContent(presentationData);
+      const updatePayload = {
+        id: presentationData.id,
+        title: presentationData.title,
+        n_slides: presentationData.n_slides,
+        theme: presentationData.theme,
+        slides: presentationData.slides,
+      };
+      await PresentationGenerationApi.updatePresentationContent(updatePayload);
       const safePdfFileName = buildSafeExportFileName(
         presentationData?.title,
         "pdf"
