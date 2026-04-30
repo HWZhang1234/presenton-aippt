@@ -32,7 +32,7 @@ class PresentationExportTaskResult(BaseModel):
 
 
 class ExportTaskService:
-    def __init__(self, timeout_seconds: int = 300):
+    def __init__(self, timeout_seconds: int = 600):  # Increased from 300s (5min) to 600s (10min)
         self.timeout_seconds = timeout_seconds
         self.node_binary = os.getenv("LITEPARSE_NODE_BINARY", "node")
         self.export_dir = self._resolve_export_dir()
@@ -124,6 +124,12 @@ class ExportTaskService:
             )
         env["ASSETS_BASE_URL"] = f"{fastapi_public_url.rstrip('/')}/app_data"
         env["BUILT_PYTHON_MODULE_PATH"] = self.converter_path
+
+        # Clear proxy settings for localhost connections to avoid Chrome navigation timeout
+        env.pop("HTTP_PROXY", None)
+        env.pop("HTTPS_PROXY", None)
+        env.pop("http_proxy", None)
+        env.pop("https_proxy", None)
 
         return env
 

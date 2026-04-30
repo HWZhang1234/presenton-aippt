@@ -143,6 +143,15 @@ if (!process.env.FAST_API_INTERNAL_URL) {
   process.env.FAST_API_INTERNAL_URL = `http://127.0.0.1:${fastapiPort}`;
 }
 
+// Set export URLs to use nginx (port 80) instead of direct service ports
+// so Chrome headless browser can access through the reverse proxy
+if (!process.env.NEXT_PUBLIC_URL) {
+  process.env.NEXT_PUBLIC_URL = "http://127.0.0.1:80";
+}
+if (!process.env.NEXT_PUBLIC_FAST_API) {
+  process.env.NEXT_PUBLIC_FAST_API = "http://127.0.0.1:80/api/v1";
+}
+
 //? UserConfig is only setup if API Keys can be changed
 const setupUserConfigFromEnv = () => {
   let existingConfig = {};
