@@ -1,4 +1,4 @@
-import { getApiUrl } from "./api";
+import { getApiUrl, getFastAPIUrl } from "./api";
 
 function normalizePathSeparators(value: string): string {
   return value.replace(/\\/g, "/");
@@ -34,12 +34,20 @@ function toServedPath(rawPath: string): string {
   return normalized;
 }
 
+function getBackendBase(): string {
+  // Prefer explicit FastAPI origin (set via fastapiUrl query param in Puppeteer context)
+  // so /app_data/ requests go directly to FastAPI (port 8000) and bypass nginx auth_request.
+  const fastApiUrl = typeof window !== "undefined" ? getFastAPIUrl() : "";
+  return fastApiUrl || (typeof window !== "undefined" ? window.location.origin : "");
+}
+
 function toFastApiStaticUrl(fileSrc: string): string {
   try {
     const url = new URL(fileSrc);
     const servedPath = toServedPath(url.pathname);
     const apiUrl = getApiUrl(servedPath);
-    return new URL(apiUrl, window.location.origin).toString();
+    const base = getBackendBase();
+    return new URL(apiUrl, base || window.location.origin).toString();
   } catch {
     // If URL parsing fails, leave as-is
     return fileSrc;
@@ -53,8 +61,8 @@ function normalizeImageSrc(src: string): string {
       const url = new URL(src);
       const servedPath = toServedPath(url.pathname);
       if (servedPath.startsWith("/app_data/") || servedPath.startsWith("/static/")) {
-        const apiUrl = getApiUrl(servedPath);
-        return new URL(apiUrl, window.location.origin).toString();
+        const base = getBackendBase();
+        return base ? `${base.replace(/\/$/, "")}${servedPath}` : src;
       }
       return src;
     } catch {

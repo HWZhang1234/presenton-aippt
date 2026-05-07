@@ -113,6 +113,16 @@ class DocumentsLoader:
         self._documents = documents
         self._images = images
 
+    def _extract_text_with_pdfplumber(self, file_path: str) -> str:
+        """Fast text extraction from text-based PDFs. Returns empty string for scanned PDFs."""
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                texts = [page.extract_text() or "" for page in pdf.pages]
+            return "\n\n".join(t for t in texts if t)
+        except Exception as exc:
+            LOGGER.warning("[DocumentsLoader] pdfplumber extraction failed file=%s error=%s", file_path, exc)
+            return ""
+
     async def load_pdf(
         self,
         file_path: str,
@@ -124,7 +134,13 @@ class DocumentsLoader:
         document: str = ""
 
         if load_text:
-            document = await asyncio.to_thread(self._parse_with_liteparse, file_path)
+            # Try direct text extraction first (fast, no OCR).
+            # Fall back to liteparse+OCR only for scanned PDFs with no embedded text.
+            extracted = await asyncio.to_thread(self._extract_text_with_pdfplumber, file_path)
+            if len(extracted.strip()) > 100:
+                document = extracted
+            else:
+                document = await asyncio.to_thread(self._parse_with_liteparse, file_path)
 
         if load_images:
             if temp_dir is None:

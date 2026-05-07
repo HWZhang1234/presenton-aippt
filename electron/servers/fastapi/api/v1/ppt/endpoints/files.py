@@ -1,7 +1,7 @@
-from http.client import HTTPException
 import os
 from typing import Annotated, List, Optional
-from fastapi import APIRouter, Body, File, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from constants.documents import UPLOAD_ACCEPTED_FILE_TYPES
 from models.decompose_files_body import DecomposeFilesBody
@@ -89,3 +89,30 @@ async def update_files(
         f.write(await file.read())
 
     return {"message": "File updated successfully"}
+
+
+@FILES_ROUTER.get("/download")
+async def download_file(path: str):
+    """Serve an exported file for download. Path must be under /app_data/exports/."""
+    app_data = os.environ.get("APP_DATA_DIRECTORY", "/app_data")
+    exports_dir = os.path.realpath(os.path.join(app_data, "exports"))
+
+    # Only allow paths under /app_data/exports/
+    if not path.startswith("/app_data/exports/"):
+        raise HTTPException(status_code=403, detail="Access denied: path not in exports directory")
+
+    relative = path[len("/app_data/exports/"):]
+    # Reject traversal attempts before resolving
+    if ".." in relative:
+        raise HTTPException(status_code=403, detail="Access denied: invalid path")
+
+    file_path = os.path.realpath(os.path.join(exports_dir, relative))
+
+    # Ensure resolved path stays inside exports dir
+    if not file_path.startswith(exports_dir + os.sep) and file_path != exports_dir:
+        raise HTTPException(status_code=403, detail="Access denied: path outside exports directory")
+
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(file_path, filename=os.path.basename(file_path))

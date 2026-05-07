@@ -1237,6 +1237,35 @@ class LLMClient:
                     max_tokens=max_tokens,
                 )
 
+    def _auto_fix_common_validation_errors(self, content: dict) -> dict:
+        """
+        Auto-fix common validation errors like too-long strings in __icon_query__ and __image_prompt__
+        This prevents unnecessary API retries and rate limiting.
+        """
+        def truncate_field(obj: any, field_name: str, max_length: int) -> any:
+            if isinstance(obj, dict):
+                fixed = {}
+                for key, value in obj.items():
+                    if key == field_name and isinstance(value, str) and len(value) > max_length:
+                        # Truncate to max_length
+                        fixed[key] = value[:max_length]
+                        LOGGER.info(f"Auto-fixed: truncated {field_name} from {len(value)} to {max_length} chars")
+                    elif isinstance(value, (dict, list)):
+                        fixed[key] = truncate_field(value, field_name, max_length)
+                    else:
+                        fixed[key] = value
+                return fixed
+            elif isinstance(obj, list):
+                return [truncate_field(item, field_name, max_length) for item in obj]
+            else:
+                return obj
+
+        # Fix common over-length fields
+        content = truncate_field(content, "__icon_query__", 30)
+        content = truncate_field(content, "__image_prompt__", 100)
+
+        return content
+
     def _get_structured_validation_feedback_message(
         self,
         content: dict,
@@ -1289,19 +1318,44 @@ class LLMClient:
         for validation_attempt in range(max_validation_loops):
             content = None
             for attempt in range(3):
-                content = await self._generate_structured_once(
-                    model=model,
-                    messages=working_messages,
-                    response_format=response_format,
-                    strict=strict,
-                    tools=parsed_tools,
-                    max_tokens=max_tokens,
-                )
+                try:
+                    content = await self._generate_structured_once(
+                        model=model,
+                        messages=working_messages,
+                        response_format=response_format,
+                        strict=strict,
+                        tools=parsed_tools,
+                        max_tokens=max_tokens,
+                    )
 
-                if content is not None:
-                    break
+                    if content is not None:
+                        break
+                except Exception as e:
+                    error_msg = str(e)
+                    # Check if it's a throttling error
+                    is_throttling = (
+                        "ThrottlingException" in error_msg
+                        or "Too many tokens" in error_msg
+                        or "rate limit" in error_msg.lower()
+                        or "429" in error_msg
+                    )
 
-                if attempt < 2:
+                    if is_throttling and attempt < 2:
+                        # Exponential backoff for throttling: 2s, 5s
+                        backoff_time = 2 ** (attempt + 1)
+                        LOGGER.warning(
+                            f"API throttling detected (attempt {attempt + 1}/3), "
+                            f"waiting {backoff_time}s before retry: {error_msg}"
+                        )
+                        await asyncio.sleep(backoff_time)
+                    elif attempt < 2:
+                        # Normal retry delay for other errors
+                        await asyncio.sleep(0.5 * (attempt + 1))
+                    else:
+                        # Last attempt, re-raise the error
+                        raise
+
+                if attempt < 2 and content is None:
                     await asyncio.sleep(0.5 * (attempt + 1))
 
             if content is None:
@@ -1312,6 +1366,9 @@ class LLMClient:
 
             if not validate_schema:
                 return content
+
+            # Auto-fix common validation errors before schema validation
+            content = self._auto_fix_common_validation_errors(content)
 
             validation_errors = get_schema_validation_errors(
                 response_format,

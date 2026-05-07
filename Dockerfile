@@ -1,25 +1,44 @@
-FROM python:3.11-slim-bookworm AS fastapi-builder
+# Use Ubuntu 24.04 base for GLIBC 2.39 (required by presentation-export v0.2.2)
+FROM ubuntu:24.04 AS fastapi-builder
+
+# Install Python 3.12 (default in Ubuntu 24.04) and build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    python3-pip \
+    ca-certificates \
+    gcc \
+    g++ \
+    python3-dev \
+    libffi-dev \
+    libjpeg-dev \
+    libpng-dev \
+    zlib1g-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/servers/fastapi
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-RUN python -m venv --without-pip /opt/venv \
-    && pip install --no-cache-dir uv
+# Create venv and install uv inside it (avoid PEP 668 restrictions)
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir uv
 
 COPY electron/servers/fastapi/pyproject.toml electron/servers/fastapi/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt \
-    && uv pip install --python /opt/venv/bin/python -r /tmp/requirements.txt
+    /opt/venv/bin/uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt \
+    && /opt/venv/bin/uv pip install --no-verify-hashes --python /opt/venv/bin/python -r /tmp/requirements.txt
 
 COPY electron/servers/fastapi /app/servers/fastapi
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /opt/venv/bin/python --no-deps .
+    /opt/venv/bin/uv pip install --python /opt/venv/bin/python --no-deps .
 # mem0/spaCy BM25 lemmatization loads en_core_web_sm at runtime; spaCy tries pip to
 # download it otherwise. Runtime image has no pip in PATH (--without-pip venv).
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /opt/venv/bin/python \
+    /opt/venv/bin/uv pip install --python /opt/venv/bin/python \
     "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 RUN --mount=type=cache,target=/root/.cache \
     /opt/venv/bin/python scripts/warm_fastembed_cache.py
@@ -81,7 +100,14 @@ RUN node /app/scripts/sync-presentation-export.cjs --force \
     && npm install "sharp@^0.34.5" --include=optional --omit=dev --no-fund --no-audit --no-package-lock
 
 
-FROM python:3.11-slim-bookworm AS runtime
+# Use Ubuntu 24.04 for GLIBC 2.39 support
+FROM ubuntu:24.04 AS runtime
+
+# Install Python 3.12 (default in Ubuntu 24.04)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -142,7 +168,7 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --d
     libxtst6 \
     libgbm1 \
     libnss3 \
-    libasound2 \
+    libasound2t64 \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
     libglib2.0-0

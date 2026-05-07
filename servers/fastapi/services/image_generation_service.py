@@ -94,6 +94,16 @@ class ImageGenerationService:
                 )
             if image_path:
                 if image_path.startswith("http"):
+                    local_path = await self._download_to_local(image_path)
+                    if local_path:
+                        return ImageAsset(
+                            path=local_path,
+                            is_uploaded=False,
+                            extras={
+                                "prompt": prompt.prompt,
+                                "theme_prompt": prompt.theme_prompt,
+                            },
+                        )
                     return image_path
                 elif os.path.exists(image_path):
                     return ImageAsset(
@@ -664,3 +674,24 @@ class ImageGenerationService:
                         raise Exception(f"Failed to download image: {response.status}")
 
         raise Exception("No images found in ComfyUI outputs")
+
+    async def _download_to_local(self, url: str) -> str | None:
+        """Download an external image URL to local output_directory."""
+        if not self.output_directory:
+            return None
+        try:
+            ext = url.split("?")[0].rsplit(".", 1)[-1][:4] or "jpg"
+            local_path = os.path.join(self.output_directory, f"{uuid.uuid4()}.{ext}")
+            os.makedirs(self.output_directory, exist_ok=True)
+            async with aiohttp.ClientSession(trust_env=True) as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        content = await response.read()
+                        with open(local_path, "wb") as f:
+                            f.write(content)
+                        print(f"Downloaded stock image to local: {local_path}")
+                        return local_path
+                    print(f"Failed to download stock image {url}: HTTP {response.status}")
+        except Exception as e:
+            print(f"Failed to download stock image {url}: {e}")
+        return None

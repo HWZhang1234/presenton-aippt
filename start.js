@@ -143,13 +143,13 @@ if (!process.env.FAST_API_INTERNAL_URL) {
   process.env.FAST_API_INTERNAL_URL = `http://127.0.0.1:${fastapiPort}`;
 }
 
-// Set export URLs to use nginx (port 80) instead of direct service ports
-// so Chrome headless browser can access through the reverse proxy
 if (!process.env.NEXT_PUBLIC_URL) {
   process.env.NEXT_PUBLIC_URL = "http://127.0.0.1:80";
 }
+// Point Puppeteer directly at FastAPI (port 8000) so /app_data/ image requests
+// bypass nginx's auth_request check, which has no session cookie in headless context.
 if (!process.env.NEXT_PUBLIC_FAST_API) {
-  process.env.NEXT_PUBLIC_FAST_API = "http://127.0.0.1:80/api/v1";
+  process.env.NEXT_PUBLIC_FAST_API = `http://127.0.0.1:${fastapiPort}`;
 }
 
 //? UserConfig is only setup if API Keys can be changed
