@@ -151,6 +151,7 @@ async function startServers(fastApiPort: number, nextjsPort: number) {
         HTTPS_PROXY: process.env.HTTPS_PROXY,
         APP_DATA_DIRECTORY: appDataDir,
         FASTAPI_PUBLIC_URL: process.env.NEXT_PUBLIC_FAST_API,
+        IMAGE_ORIGIN_URL: `http://127.0.0.1:${fastApiPort}`,
         TEMP_DIRECTORY: tempDir,
         USER_CONFIG_PATH: userConfigPath,
         MIGRATE_DATABASE_ON_STARTUP: "True",

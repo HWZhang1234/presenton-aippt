@@ -12,7 +12,6 @@ from models.sql.image_asset import ImageAsset
 from utils.get_env import (
     get_dall_e_3_quality_env,
     get_gpt_image_1_5_quality_env,
-    get_next_public_fast_api_env,
     get_pexels_api_key_env,
 )
 from utils.get_env import get_pixabay_api_key_env
@@ -64,12 +63,12 @@ class ImageGenerationService:
         if path.startswith("http://") or path.startswith("https://"):
             return path
 
-        fastapi_origin = (get_next_public_fast_api_env() or "").strip()
-        if not fastapi_origin:
+        image_origin = (os.getenv("IMAGE_ORIGIN_URL") or "").strip()
+        if not image_origin:
             return path
 
         normalized_path = path if path.startswith("/") else f"/{path}"
-        return f"{fastapi_origin.rstrip('/')}{normalized_path}"
+        return f"{image_origin.rstrip('/')}{normalized_path}"
 
     async def generate_image(self, prompt: ImagePrompt) -> str | ImageAsset:
         """

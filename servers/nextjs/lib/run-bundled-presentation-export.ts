@@ -128,7 +128,7 @@ export async function runBundledPresentationExport(params: {
   const nextjsUrl =
     process.env.NEXT_PUBLIC_URL?.trim() || "http://127.0.0.1";
   const q = new URLSearchParams({ id: presentationId });
-  const fastapiUrl = process.env.NEXT_PUBLIC_FAST_API?.trim();
+  const fastapiUrl = process.env.FAST_API_INTERNAL_URL?.trim();
   if (fastapiUrl) {
     q.set("fastapiUrl", fastapiUrl);
   }

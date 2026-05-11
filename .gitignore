@@ -27,3 +27,6 @@ skills-lock.json
 presentation-export/index.js
 presentation-export/py/
 .cache/presentation-export/
+
+# Pre-downloaded zip for Docker build (55 MB binary, not tracked in git)
+scripts/export-Linux-X64.zip

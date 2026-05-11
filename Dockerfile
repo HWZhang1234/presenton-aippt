@@ -92,8 +92,11 @@ RUN mkdir -p /app/document-extraction-liteparse \
 
 COPY electron/resources/document-extraction/liteparse_runner.mjs /app/document-extraction-liteparse/liteparse_runner.mjs
 COPY scripts/sync-presentation-export.cjs /app/scripts/sync-presentation-export.cjs
+# Use pre-downloaded zip to avoid unreliable network access inside Docker build
+COPY scripts/export-Linux-X64.zip /tmp/export-Linux-X64.zip
 # Bundled export still loads @img/sharp-* native addons from node_modules (not inlined).
-RUN node /app/scripts/sync-presentation-export.cjs --force \
+RUN unzip -o /tmp/export-Linux-X64.zip -d /app/presentation-export \
+    && rm /tmp/export-Linux-X64.zip \
     && chmod +x /app/presentation-export/py/convert-linux-x64 \
     && cd /app/presentation-export \
     && npm init -y \

@@ -7,21 +7,26 @@ from sqlalchemy import JSON, Column, DateTime
 from sqlmodel import Field, SQLModel
 
 from utils.datetime_utils import get_current_utc_datetime
-from utils.get_env import get_app_data_directory_env, get_next_public_fast_api_env
+from utils.get_env import get_app_data_directory_env
 from utils.path_helpers import get_resource_path
 
 
 def _with_fastapi_origin(path: str) -> str:
-    """Prefix relative web paths with FastAPI origin when available."""
+    """Prefix relative web paths with IMAGE_ORIGIN_URL when set.
+
+    In Docker the var is unset so relative paths are returned as-is (nginx
+    serves /app_data/* directly).  In Electron it is set to the FastAPI
+    origin so the WebView can resolve the absolute URL.
+    """
     if path.startswith("http://") or path.startswith("https://"):
         return path
 
-    fastapi_origin = (get_next_public_fast_api_env() or "").strip()
-    if not fastapi_origin:
+    image_origin = (os.getenv("IMAGE_ORIGIN_URL") or "").strip()
+    if not image_origin:
         return path
 
     normalized_path = path if path.startswith("/") else f"/{path}"
-    return f"{fastapi_origin.rstrip('/')}{normalized_path}"
+    return f"{image_origin.rstrip('/')}{normalized_path}"
 
 
 class ImageAsset(SQLModel, table=True):
