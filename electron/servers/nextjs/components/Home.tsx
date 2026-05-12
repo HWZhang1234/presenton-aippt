@@ -13,7 +13,7 @@ import FinalStep from "./OnBoarding/FinalStep";
 
 export default function Home() {
   const router = useRouter();
-  const [step, setStep] = useState<number>(1)
+  const [step, setStep] = useState<number>(2)
   const [selectedMode, setSelectedMode] = useState<string>("presenton")
   const config = useSelector((state: RootState) => state.userConfig);
 

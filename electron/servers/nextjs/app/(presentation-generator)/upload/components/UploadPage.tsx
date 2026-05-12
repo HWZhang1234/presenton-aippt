@@ -27,11 +27,9 @@ import { setPptGenUploadState } from "@/store/slices/presentationGenUpload";
 import { trackEvent, MixpanelEvent } from "@/utils/mixpanel";
 import { ConfigurationSelects } from "./ConfigurationSelects";
 import { RootState } from "@/store/store";
-import { ImagesApi } from "../../services/api/images";
 import CurrentConfig from "./CurrentConfig";
 import { LLMConfig } from "@/types/llm_config";
 
-const STOCK_IMAGE_PROVIDERS = new Set(["pexels", "pixabay"]);
 const FILE_TYPE_WORD = new Set([".doc", ".docx", ".docm", ".odt", ".rtf"]);
 const FILE_TYPE_PRESENTATION = new Set([".ppt", ".pptx", ".pptm", ".odp"]);
 const FILE_TYPE_SPREADSHEET = new Set([".xls", ".xlsx", ".xlsm", ".ods", ".csv", ".tsv"]);
@@ -158,36 +156,6 @@ const UploadPage = () => {
     setConfig((prev) => ({ ...prev, [key]: value } as PresentationConfig));
   };
 
-  const ensureStockImageProviderReady = async (): Promise<boolean> => {
-    if (llmConfig?.DISABLE_IMAGE_GENERATION) {
-      return true;
-    }
-
-    const selectedProvider = (llmConfig?.IMAGE_PROVIDER || "").toLowerCase();
-    if (!STOCK_IMAGE_PROVIDERS.has(selectedProvider)) {
-      return true;
-    }
-
-    try {
-      const providerApiKey =
-        selectedProvider === "pexels"
-          ? llmConfig?.PEXELS_API_KEY
-          : llmConfig?.PIXABAY_API_KEY;
-      await ImagesApi.searchStockImages("business", 1, {
-        provider: selectedProvider,
-        apiKey: providerApiKey,
-        strictApiKey: true,
-      });
-      return true;
-    } catch (error: any) {
-      toast.error(
-        error?.message ||
-        `Unable to reach ${selectedProvider} right now. Please check your API key/settings and try again.`
-      );
-      return false;
-    }
-  };
-
   /**
    * Validates the current configuration and files
    * @returns boolean indicating if the configuration is valid
@@ -228,16 +196,14 @@ const UploadPage = () => {
   const handleGeneratePresentation = async () => {
     if (!validateConfiguration()) return;
 
-    trackEvent(MixpanelEvent.Upload_GetStarted_Button_Clicked, getUploadSnapshotProps());
+    setLoadingState({
+      isLoading: true,
+      message: "Checking configuration...",
+      showProgress: false,
+      duration: 4,
+    });
 
-    const isStockProviderReady = await ensureStockImageProviderReady();
-    if (!isStockProviderReady) {
-      trackEvent(MixpanelEvent.Upload_Validation_Failed, {
-        ...getUploadSnapshotProps(),
-        reason: "stock_image_provider_unreachable",
-      });
-      return;
-    }
+    trackEvent(MixpanelEvent.Upload_GetStarted_Button_Clicked, getUploadSnapshotProps());
 
     try {
       const hasUploadedAssets = files.length > 0;

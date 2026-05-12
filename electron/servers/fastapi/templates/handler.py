@@ -386,7 +386,7 @@ async def upload_fonts_and_slides_preview(
         pptx_file=pptx_file,
         font_files=font_files,
         original_font_names=original_font_names,
-        max_slides=25,
+        max_slides=None,
     )
 
 
@@ -447,6 +447,8 @@ async def create_slide_layout(
         raise HTTPException(status_code=400, detail="Invalid slide index")
 
     slide_html = template_info.slide_htmls[request.index]
+    # Strip internal FastAPI base URL so React components use nginx-proxied relative paths
+    slide_html = slide_html.replace("http://127.0.0.1:8000", "")
     slide_image_url = template_info.slide_image_urls[request.index]
     image_bytes, media_type = await _read_image_bytes_and_media_type(slide_image_url)
 

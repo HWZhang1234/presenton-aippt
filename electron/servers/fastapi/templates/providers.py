@@ -1,6 +1,7 @@
 import asyncio
 import base64
 from dataclasses import dataclass
+import logging
 import time
 from typing import Any, Awaitable, Callable, Optional
 
@@ -11,12 +12,16 @@ from google.genai import types as google_types
 from openai import AsyncOpenAI
 
 from enums.llm_provider import LLMProvider
+
+logger = logging.getLogger(__name__)
 from utils.get_env import (
     get_anthropic_api_key_env,
     get_codex_access_token_env,
     get_codex_account_id_env,
     get_codex_refresh_token_env,
     get_codex_token_expires_env,
+    get_custom_llm_api_key_env,
+    get_custom_llm_url_env,
     get_google_api_key_env,
     get_openai_api_key_env,
 )
@@ -28,7 +33,7 @@ from utils.set_env import (
     set_codex_token_expires_env,
 )
 
-MAX_ATTEMPTS_PER_PROVIDER = 4
+MAX_ATTEMPTS_PER_PROVIDER = 2
 
 
 @dataclass(frozen=True)
@@ -53,9 +58,12 @@ def get_template_provider_spec() -> TemplateProviderSpec:
     if provider == LLMProvider.ANTHROPIC:
         return TemplateProviderSpec(provider=provider, model=get_model())
 
+    if provider == LLMProvider.CUSTOM:
+        return TemplateProviderSpec(provider=provider, model=get_model())
+
     raise HTTPException(
         status_code=400,
-        detail="Template generation only supports OpenAI, Codex, Google, or Anthropic.",
+        detail="Template generation only supports OpenAI, Codex, Google, Anthropic, or Custom.",
     )
 
 
@@ -70,6 +78,14 @@ async def run_plain_provider_buckets(*, providers: list[PlainLLMProvider]) -> st
                     return response_text
                 raise ValueError("No output from template generation provider")
             except Exception as exc:
+                logger.error(
+                    "[%s] attempt %d/%d failed: %s",
+                    provider.name,
+                    attempt,
+                    MAX_ATTEMPTS_PER_PROVIDER,
+                    exc,
+                    exc_info=True,
+                )
                 last_exception = exc
 
     if isinstance(last_exception, HTTPException):
@@ -165,6 +181,34 @@ def _get_anthropic_client() -> AsyncAnthropic:
     if not api_key:
         raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY is not set")
     return AsyncAnthropic(api_key=api_key)
+
+
+def _get_custom_client_for_template() -> AsyncOpenAI:
+    import httpx
+    import os
+
+    url = get_custom_llm_url_env()
+    if not url:
+        raise HTTPException(status_code=400, detail="Custom LLM URL is not set")
+    api_key = get_custom_llm_api_key_env() or "null"
+
+    disable_ssl = os.getenv("DISABLE_SSL_VERIFY", "false").lower() == "true"
+    http_proxy = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+    https_proxy = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
+
+    client_kwargs: dict = {"base_url": url, "api_key": api_key, "timeout": 300.0, "max_retries": 0}
+
+    if disable_ssl or http_proxy or https_proxy:
+        httpx_kwargs: dict = {}
+        if disable_ssl:
+            httpx_kwargs["verify"] = False
+        if https_proxy:
+            httpx_kwargs["proxy"] = https_proxy
+        elif http_proxy:
+            httpx_kwargs["proxy"] = http_proxy
+        client_kwargs["http_client"] = httpx.AsyncClient(**httpx_kwargs)
+
+    return AsyncOpenAI(**client_kwargs)
 
 
 async def _call_openai_like(
@@ -335,6 +379,38 @@ async def _call_anthropic(
     return output_text
 
 
+async def _call_custom(
+    *,
+    model: str,
+    system_prompt: str,
+    user_text: str,
+    image_bytes: Optional[bytes] = None,
+    media_type: str = "image/png",
+) -> str:
+    client = _get_custom_client_for_template()
+    user_content: list = []
+    if image_bytes:
+        user_content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{media_type};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+            },
+        })
+    user_content.append({"type": "text", "text": user_text})
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        max_tokens=8192,
+    )
+    output_text = response.choices[0].message.content if response.choices else ""
+    if not output_text:
+        raise HTTPException(status_code=500, detail="No output from template provider")
+    return output_text
+
+
 def _build_provider_call(
     *,
     spec: Optional[TemplateProviderSpec] = None,
@@ -390,10 +466,21 @@ def _build_provider_call(
                 media_type=media_type,
             ),
         )
+    if spec.provider == LLMProvider.CUSTOM:
+        return PlainLLMProvider(
+            name="Custom",
+            call=lambda: _call_custom(
+                model=spec.model,
+                system_prompt=system_prompt,
+                user_text=user_text,
+                image_bytes=image_bytes,
+                media_type=media_type,
+            ),
+        )
 
     raise HTTPException(
         status_code=400,
-        detail="Template generation only supports OpenAI, Codex, Google, or Anthropic.",
+        detail="Template generation only supports OpenAI, Codex, Google, Anthropic, or Custom.",
     )
 
 
