@@ -1,11 +1,54 @@
 'use client'
 
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import SlideContent from "../SlideContent";
 import { ProcessedSlide } from "../../types";
 import { RotateCcw, X, AlertCircle, ImageOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CompiledLayout } from "@/app/hooks/compileLayout";
+
+const BASE_WIDTH = 1280;
+const BASE_HEIGHT = 720;
+
+function ScaledSlideWrapper({ children }: { children: React.ReactNode }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const el = containerRef.current;
+    const ro = new ResizeObserver(() => setContainerWidth(el.clientWidth));
+    ro.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  const scale = useMemo(() => {
+    if (!containerWidth) return 1;
+    return Math.min((containerWidth / BASE_WIDTH) * 0.99, 1);
+  }, [containerWidth]);
+
+  return (
+    <div ref={containerRef} className="w-full">
+      <div
+        className="relative mx-auto"
+        style={{ height: `${BASE_HEIGHT * scale}px`, overflow: "hidden" }}
+      >
+        <div
+          className="absolute top-0 left-0"
+          style={{
+            width: BASE_WIDTH,
+            height: BASE_HEIGHT,
+            transformOrigin: "top left",
+            transform: `scale(${scale})`,
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export interface SlideContentDisplayProps {
   slide: ProcessedSlide;
@@ -56,12 +99,14 @@ export const SlideContentDisplay: React.FC<SlideContentDisplayProps> = ({
         {/* Slide Content */}
         <div className="relative rounded-xl overflow-hidden border border-[#E5E7EB] bg-white shadow-sm">
           <div ref={slideDisplayRef}>
-            <SlideContent
-              slide={slide}
-              compiledLayout={compiledLayout}
-              data={previewData}
-              retrySlide={retrySlide}
-            />
+            <ScaledSlideWrapper>
+              <SlideContent
+                slide={slide}
+                compiledLayout={compiledLayout}
+                data={previewData}
+                retrySlide={retrySlide}
+              />
+            </ScaledSlideWrapper>
           </div>
         </div>
       </div>

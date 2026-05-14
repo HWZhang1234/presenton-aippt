@@ -10,7 +10,7 @@
  */
 
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
 import { clearOutlines, setPresentationId } from "@/store/slices/presentationGeneration";
@@ -28,6 +28,7 @@ import { trackEvent, MixpanelEvent } from "@/utils/mixpanel";
 import { ConfigurationSelects } from "./ConfigurationSelects";
 import { RootState } from "@/store/store";
 import CurrentConfig from "./CurrentConfig";
+import { getApiUrl } from "@/utils/api";
 import { LLMConfig } from "@/types/llm_config";
 
 const FILE_TYPE_WORD = new Set([".doc", ".docx", ".docm", ".odt", ".rtf"]);
@@ -117,6 +118,10 @@ const UploadPage = () => {
     extra_info: "",
   });
 
+  useEffect(() => {
+    console.log("[UploadPage] loadingState changed:", loadingState.isLoading, loadingState.message);
+  }, [loadingState]);
+
   const getUploadSnapshotProps = () => {
     const trimmedPrompt = config.prompt.trim();
     const trimmedInstructions = (config.instructions || "").trim();
@@ -161,6 +166,7 @@ const UploadPage = () => {
    * @returns boolean indicating if the configuration is valid
    */
   const validateConfiguration = (): boolean => {
+    console.log("[UploadPage] validateConfiguration called, config.language:", config.language, "prompt:", config.prompt.slice(0, 20), "files:", files.length);
     if (!config.language) {
       trackEvent(MixpanelEvent.Upload_Validation_Failed, {
         ...getUploadSnapshotProps(),
@@ -194,7 +200,12 @@ const UploadPage = () => {
    * Handles the presentation generation process
    */
   const handleGeneratePresentation = async () => {
-    if (!validateConfiguration()) return;
+    console.log("[UploadPage] handleGeneratePresentation called, loadingState.isLoading:", loadingState.isLoading);
+    if (!validateConfiguration()) {
+      console.log("[UploadPage] validation failed, aborting");
+      return;
+    }
+    console.log("[UploadPage] validation passed, setting loading state");
 
     setLoadingState({
       isLoading: true,
@@ -207,6 +218,7 @@ const UploadPage = () => {
 
     try {
       const hasUploadedAssets = files.length > 0;
+      console.log("[UploadPage] hasUploadedAssets:", hasUploadedAssets);
 
       if (hasUploadedAssets) {
         await handleDocumentProcessing();
@@ -273,6 +285,8 @@ const UploadPage = () => {
     });
 
     const selectedLanguage = config?.language ?? "";
+    const apiUrl = getApiUrl(`/api/v1/ppt/presentation/create`);
+    console.log("[UploadPage] createPresentation URL:", apiUrl, "language:", selectedLanguage);
 
     // Use the first available layout group for direct generation
     trackEvent(MixpanelEvent.Upload_Create_Presentation_API_Call);
@@ -300,7 +314,7 @@ const UploadPage = () => {
    * Handles errors during presentation generation
    */
   const handleGenerationError = (error: any) => {
-    console.error("Error in upload page", error);
+    console.error("[UploadPage] handleGenerationError:", error);
     setLoadingState({
       isLoading: false,
       message: "",
@@ -351,6 +365,7 @@ const UploadPage = () => {
         <div className="p-4">
           <Button
             onClick={handleGeneratePresentation}
+            disabled={loadingState.isLoading}
             style={{
               background: "linear-gradient(270deg, #D5CAFC 2.4%, #E3D2EB 27.88%, #F4DCD3 69.23%, #FDE4C2 100%)"
             }}

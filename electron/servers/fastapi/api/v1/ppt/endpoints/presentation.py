@@ -74,6 +74,10 @@ import uuid
 PRESENTATION_ROUTER = APIRouter(prefix="/presentation", tags=["Presentation"])
 
 
+def _get_user_id_from_request(request: Request) -> Optional[str]:
+    return request.headers.get("X-User-ID") or None
+
+
 def _extract_custom_template_id(layout_name: Optional[str]) -> Optional[uuid.UUID]:
     if not layout_name or not layout_name.startswith("custom-"):
         return None
@@ -134,13 +138,15 @@ def _insert_toc_layouts(
 
 
 @PRESENTATION_ROUTER.get("/all", response_model=List[PresentationWithSlides])
-async def get_all_presentations(sql_session: AsyncSession = Depends(get_async_session)):
+async def get_all_presentations(request: Request, sql_session: AsyncSession = Depends(get_async_session)):
+    user_id = _get_user_id_from_request(request)
     query = (
         select(PresentationModel, SlideModel)
         .join(
             SlideModel,
             (SlideModel.presentation == PresentationModel.id) & (SlideModel.index == 0),
         )
+        .where(PresentationModel.user_id == user_id)
         .order_by(PresentationModel.created_at.desc())
     )
 
@@ -183,10 +189,13 @@ async def get_presentation(
 
 @PRESENTATION_ROUTER.delete("/{id}", status_code=204)
 async def delete_presentation(
-    id: uuid.UUID, sql_session: AsyncSession = Depends(get_async_session)
+    id: uuid.UUID, request: Request, sql_session: AsyncSession = Depends(get_async_session)
 ):
     presentation = await sql_session.get(PresentationModel, id)
     if not presentation:
+        raise HTTPException(404, "Presentation not found")
+    user_id = _get_user_id_from_request(request)
+    if user_id and presentation.user_id and presentation.user_id != user_id:
         raise HTTPException(404, "Presentation not found")
 
     await sql_session.delete(presentation)
@@ -195,6 +204,7 @@ async def delete_presentation(
 
 @PRESENTATION_ROUTER.post("/create", response_model=PresentationModel)
 async def create_presentation(
+    request: Request,
     content: Annotated[str, Body()],
     n_slides: Annotated[Optional[int], Body()] = None,
     language: Annotated[Optional[str], Body()] = None,
@@ -243,6 +253,7 @@ async def create_presentation(
         include_table_of_contents=include_table_of_contents,
         include_title_slide=include_title_slide,
         web_search=web_search,
+        user_id=_get_user_id_from_request(request),
     )
 
     sql_session.add(presentation)
@@ -562,6 +573,7 @@ async def generate_presentation_handler(
     presentation_id: uuid.UUID,
     async_status: Optional[AsyncPresentationGenerationTaskModel],
     sql_session: AsyncSession = Depends(get_async_session),
+    user_id: Optional[str] = None,
 ):
     try:
         using_slides_markdown = False
@@ -737,6 +749,7 @@ async def generate_presentation_handler(
             tone=request.tone.value,
             verbosity=request.verbosity.value,
             instructions=request.instructions,
+            user_id=user_id,
         )
 
         # Updating async status
@@ -893,12 +906,14 @@ async def generate_presentation_handler(
 @PRESENTATION_ROUTER.post("/generate", response_model=PresentationPathAndEditPath)
 async def generate_presentation_sync(
     request: GeneratePresentationRequest,
+    http_request: Request,
     sql_session: AsyncSession = Depends(get_async_session),
 ):
     try:
         (presentation_id,) = await check_if_api_request_is_valid(request, sql_session)
         return await generate_presentation_handler(
-            request, presentation_id, None, sql_session
+            request, presentation_id, None, sql_session,
+            user_id=_get_user_id_from_request(http_request),
         )
     except HTTPException:
         raise
@@ -913,6 +928,7 @@ async def generate_presentation_sync(
 async def generate_presentation_async(
     request: GeneratePresentationRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     sql_session: AsyncSession = Depends(get_async_session),
 ):
     try:
@@ -932,6 +948,7 @@ async def generate_presentation_async(
             presentation_id,
             async_status=async_status,
             sql_session=sql_session,
+            user_id=_get_user_id_from_request(http_request),
         )
         return async_status
 

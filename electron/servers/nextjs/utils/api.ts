@@ -1,35 +1,60 @@
 import { ConfigStorage } from './configStorage';
 
+const USER_ID_KEY = "presenton_user_id";
+
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+export function getUserId(): string {
+  if (typeof window === "undefined") return "";
+  let id = localStorage.getItem(USER_ID_KEY);
+  if (!id) {
+    id = generateUUID();
+    localStorage.setItem(USER_ID_KEY, id);
+  }
+  return id;
+}
+
 // Get user config headers for API requests
 export function getUserConfigHeaders(): Record<string, string> {
   const config = ConfigStorage.load();
-  if (!config) return {};
-
   const headers: Record<string, string> = {};
-  
-  // Add LLM configuration
-  if (config.LLM) headers['X-LLM-Provider'] = config.LLM;
-  if (config.OPENAI_API_KEY) headers['X-OpenAI-API-Key'] = config.OPENAI_API_KEY;
-  if (config.OPENAI_MODEL) headers['X-OpenAI-Model'] = config.OPENAI_MODEL;
-  if (config.GOOGLE_API_KEY) headers['X-Google-API-Key'] = config.GOOGLE_API_KEY;
-  if (config.GOOGLE_MODEL) headers['X-Google-Model'] = config.GOOGLE_MODEL;
-  if (config.ANTHROPIC_API_KEY) headers['X-Anthropic-API-Key'] = config.ANTHROPIC_API_KEY;
-  if (config.ANTHROPIC_MODEL) headers['X-Anthropic-Model'] = config.ANTHROPIC_MODEL;
-  if (config.CUSTOM_LLM_URL) headers['X-Custom-LLM-URL'] = config.CUSTOM_LLM_URL;
-  if (config.CUSTOM_LLM_API_KEY) headers['X-Custom-LLM-API-Key'] = config.CUSTOM_LLM_API_KEY;
-  if (config.CUSTOM_MODEL) headers['X-Custom-Model'] = config.CUSTOM_MODEL;
-  if (config.OLLAMA_URL) headers['X-Ollama-URL'] = config.OLLAMA_URL;
-  if (config.OLLAMA_MODEL) headers['X-Ollama-Model'] = config.OLLAMA_MODEL;
-  if (config.CODEX_MODEL) headers['X-Codex-Model'] = config.CODEX_MODEL;
-  
-  // Add image provider configuration
-  if (config.IMAGE_PROVIDER) headers['X-Image-Provider'] = config.IMAGE_PROVIDER;
-  if (config.PEXELS_API_KEY) headers['X-Pexels-API-Key'] = config.PEXELS_API_KEY;
-  if (config.PIXABAY_API_KEY) headers['X-Pixabay-API-Key'] = config.PIXABAY_API_KEY;
-  if (config.DISABLE_IMAGE_GENERATION !== undefined) {
-    headers['X-Disable-Image-Generation'] = String(config.DISABLE_IMAGE_GENERATION);
+
+  if (config) {
+    // Add LLM configuration
+    if (config.LLM) headers['X-LLM-Provider'] = config.LLM;
+    if (config.OPENAI_API_KEY) headers['X-OpenAI-API-Key'] = config.OPENAI_API_KEY;
+    if (config.OPENAI_MODEL) headers['X-OpenAI-Model'] = config.OPENAI_MODEL;
+    if (config.GOOGLE_API_KEY) headers['X-Google-API-Key'] = config.GOOGLE_API_KEY;
+    if (config.GOOGLE_MODEL) headers['X-Google-Model'] = config.GOOGLE_MODEL;
+    if (config.ANTHROPIC_API_KEY) headers['X-Anthropic-API-Key'] = config.ANTHROPIC_API_KEY;
+    if (config.ANTHROPIC_MODEL) headers['X-Anthropic-Model'] = config.ANTHROPIC_MODEL;
+    if (config.CUSTOM_LLM_URL) headers['X-Custom-LLM-URL'] = config.CUSTOM_LLM_URL;
+    if (config.CUSTOM_LLM_API_KEY) headers['X-Custom-LLM-API-Key'] = config.CUSTOM_LLM_API_KEY;
+    if (config.CUSTOM_MODEL) headers['X-Custom-Model'] = config.CUSTOM_MODEL;
+    if (config.OLLAMA_URL) headers['X-Ollama-URL'] = config.OLLAMA_URL;
+    if (config.OLLAMA_MODEL) headers['X-Ollama-Model'] = config.OLLAMA_MODEL;
+    if (config.CODEX_MODEL) headers['X-Codex-Model'] = config.CODEX_MODEL;
+
+    // Add image provider configuration
+    if (config.IMAGE_PROVIDER) headers['X-Image-Provider'] = config.IMAGE_PROVIDER;
+    if (config.PEXELS_API_KEY) headers['X-Pexels-API-Key'] = config.PEXELS_API_KEY;
+    if (config.PIXABAY_API_KEY) headers['X-Pixabay-API-Key'] = config.PIXABAY_API_KEY;
+    if (config.DISABLE_IMAGE_GENERATION !== undefined) {
+      headers['X-Disable-Image-Generation'] = String(config.DISABLE_IMAGE_GENERATION);
+    }
   }
-  
+
+  const userId = getUserId();
+  if (userId) headers['X-User-ID'] = userId;
+
   return headers;
 }
 

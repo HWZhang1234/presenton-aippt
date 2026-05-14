@@ -137,8 +137,7 @@ export const usePresentationStreaming = (
 
               if (normalizedPartialData.slides) {
                 if (
-                  normalizedPartialData.slides.length !== previousSlidesLength.current &&
-                  normalizedPartialData.slides.length > 0
+                  normalizedPartialData.slides.length > previousSlidesLength.current
                 ) {
                   dispatch(
                     setPresentationData({

@@ -3,6 +3,7 @@ import random
 import re
 import uuid
 from datetime import datetime
+from io import BytesIO
 from typing import Any, List, Optional
 
 import aiohttp
@@ -159,6 +160,8 @@ def _strip_code_fences(value: str) -> str:
 
 def _normalize_layout_code_for_create(code: str) -> str:
     normalized = _strip_code_fences(code)
+    # Strip internal FastAPI base URL that LLMs sometimes hallucinate back into URLs
+    normalized = normalized.replace("http://127.0.0.1:8000", "")
     normalized = (
         normalized.replace("image_url", "__image_url__")
         .replace("icon_url", "__icon_url__")
@@ -434,6 +437,125 @@ async def init_create_template(
     return template_create_info.id
 
 
+def _inject_decorative_crops(slide_html: str, image_bytes: bytes) -> str:
+    """Detect empty SVG placeholders for unconverted PPTX decorative graphics, crop those
+    regions from the slide screenshot, save them, and replace the placeholders with real
+    <img> elements so the LLM has actual image URLs to reference.
+    Also removes any small <img> elements whose positions fall inside a cropped region,
+    since the crop already includes them visually."""
+    try:
+        from PIL import Image
+
+        img = Image.open(BytesIO(image_bytes))
+        img_width, img_height = img.size
+
+        # Infer slide HTML dimensions from the style attribute
+        dim_match = re.search(r"width:(\d+(?:\.\d+)?)px.*?height:(\d+(?:\.\d+)?)px", slide_html)
+        html_w = float(dim_match.group(1)) if dim_match else 1280.0
+        html_h = float(dim_match.group(2)) if dim_match else 720.0
+        scale_x = img_width / html_w
+        scale_y = img_height / html_h
+
+        # Find large divs that contain only a single SVG where all paths are invisible.
+        # These are PPTX shapes the converter couldn't export — they become blank placeholders.
+        pattern = re.compile(
+            r'(<div\s[^>]*class="([^"]*absolute[^"]*)"[^>]*>)\s*'
+            r'(<svg\b[^>]*>[\s\S]*?</svg>)\s*</div>',
+            re.DOTALL,
+        )
+
+        replacements = []
+        crop_regions: list[tuple[float, float, float, float]] = []  # (left, top, right, bottom)
+        for m in pattern.finditer(slide_html):
+            classes = m.group(2)
+            svg_block = m.group(3)
+
+            # Skip if SVG has any visible fill or stroke
+            visible = re.search(
+                r'fill="(?!none)[^"]*"|stroke="(?!none)[^"]*"', svg_block
+            )
+            if visible:
+                continue
+
+            left_m = re.search(r"left-\[(\d+(?:\.\d+)?)px\]", classes)
+            top_m = re.search(r"top-\[(\d+(?:\.\d+)?)px\]", classes)
+            w_m = re.search(r"w-\[(\d+(?:\.\d+)?)px\]", classes)
+            h_m = re.search(r"h-\[(\d+(?:\.\d+)?)px\]", classes)
+            if not all([left_m, top_m, w_m, h_m]):
+                continue
+
+            left = float(left_m.group(1))
+            top = float(top_m.group(1))
+            width = float(w_m.group(1))
+            height = float(h_m.group(1))
+
+            # Only process elements large enough to be a decorative background
+            if width < 300 and height < 200:
+                continue
+
+            x1 = max(0, int(left * scale_x))
+            y1 = max(0, int(top * scale_y))
+            x2 = min(img_width, int((left + width) * scale_x))
+            y2 = min(img_height, int((top + height) * scale_y))
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            cropped = img.crop((x1, y1, x2, y2))
+            # Store in pptx-to-html directory which is already proxied by nginx
+            crop_dir = "/app_data/pptx-to-html/decorative"
+            os.makedirs(crop_dir, exist_ok=True)
+            crop_filename = f"deco_{uuid.uuid4().hex}.png"
+            cropped.save(os.path.join(crop_dir, crop_filename), "PNG")
+            crop_url = f"/app_data/pptx-to-html/decorative/{crop_filename}"
+
+            replacement = (
+                f'<div class="absolute left-[{left}px] top-[{top}px] '
+                f'w-[{width}px] h-[{height}px] overflow-hidden">'
+                f'<img src="{crop_url}" class="w-full h-full object-cover" '
+                f'alt="Decorative background" /></div>'
+            )
+            replacements.append((m.start(), m.end(), replacement))
+            crop_regions.append((left, top, left + width, top + height))
+
+        # Apply replacements in reverse order to preserve positions
+        for start, end, repl in reversed(replacements):
+            slide_html = slide_html[:start] + repl + slide_html[end:]
+
+        # Remove small <img> elements that are fully contained within a cropped region.
+        # The crop image already includes them visually, so keeping them causes duplicate
+        # rendering at wrong sizes in the LLM-generated component.
+        if crop_regions:
+            small_img_pattern = re.compile(
+                r'<div[^>]*class="([^"]*absolute[^"]*)"[^>]*>\s*'
+                r'<img\b[^>]*>\s*</div>',
+                re.DOTALL,
+            )
+            removals = []
+            for m in small_img_pattern.finditer(slide_html):
+                classes = m.group(1)
+                left_m = re.search(r"left-\[(\d+(?:\.\d+)?)px\]", classes)
+                top_m = re.search(r"top-\[(\d+(?:\.\d+)?)px\]", classes)
+                w_m = re.search(r"w-\[(\d+(?:\.\d+)?)px\]", classes)
+                h_m = re.search(r"h-\[(\d+(?:\.\d+)?)px\]", classes)
+                if not all([left_m, top_m, w_m, h_m]):
+                    continue
+                el_left = float(left_m.group(1))
+                el_top = float(top_m.group(1))
+                el_right = el_left + float(w_m.group(1))
+                el_bottom = el_top + float(h_m.group(1))
+                for cr_left, cr_top, cr_right, cr_bottom in crop_regions:
+                    if (el_left >= cr_left and el_top >= cr_top
+                            and el_right <= cr_right and el_bottom <= cr_bottom):
+                        removals.append((m.start(), m.end()))
+                        break
+            for start, end in reversed(removals):
+                slide_html = slide_html[:start] + slide_html[end:]
+
+        return slide_html
+    except Exception:
+        return slide_html
+
+
 async def create_slide_layout(
     request: CreateSlideLayoutRequest = Body(...),
     sql_session: AsyncSession = Depends(get_async_session),
@@ -451,6 +573,9 @@ async def create_slide_layout(
     slide_html = slide_html.replace("http://127.0.0.1:8000", "")
     slide_image_url = template_info.slide_image_urls[request.index]
     image_bytes, media_type = await _read_image_bytes_and_media_type(slide_image_url)
+
+    # Replace empty SVG placeholders with real cropped images from the slide screenshot
+    slide_html = _inject_decorative_crops(slide_html, image_bytes)
 
     fonts_text = ""
     if template_info.fonts:

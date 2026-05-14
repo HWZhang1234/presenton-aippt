@@ -13,6 +13,7 @@ Provide reusable TSX code which can be used as template to generate new slides w
 # Decorative Elements:
 - Arrows, Lines, Shapes, etc.
 - Images with Grid patterns, background patterns, gradients, solid colors, etc.
+- Decorative background graphics, patterns, and geometric designs (radial lines, spirals, grids, circular patterns, etc.).
 - Background of infographics like funnel, timeline, etc.
 - Company name, logos, etc.
 - Images covering the entire slide.
@@ -22,6 +23,11 @@ Provide reusable TSX code which can be used as template to generate new slides w
 - Use them exactly as they are in the HTML reference.
 - Do not change decorative images and icons urls.
 - Images containing company name, logos, etc should be identified as decorative elements.
+- Full-slide or large background decorative graphics (radial lines, geometric patterns, etc.) MUST be included as <img> elements using the exact URL from the HTML reference, BUT ONLY IF the image is displayed at a large size in the HTML (at least 300px in width or height). Do not omit these.
+- CRITICAL: Do NOT use a small image (displayed at less than 200px in any dimension in the HTML reference) as a large background or decorative fill element. A small image must only be rendered at its exact designated small size and position from the HTML reference.
+- CRITICAL: If a large decorative graphic (radial lines, spiral patterns, geometric designs, etc.) is visible in the slide screenshot but has NO corresponding image URL in the HTML reference, do NOT substitute it with any other image. Instead, use only CSS (background-color from the slide) or omit it entirely. Never use an unrelated small image as a substitute for a missing large decorative graphic.
+- SVG elements where ALL paths have fill="none" and stroke="none" are empty unconverted placeholders from the PPTX exporter — OMIT these entirely from the React component, do not render them.
+- Never replace a decorative background image (that is actually large in the HTML reference) with a plain color.
 
 # Content Elements:
 - Title, Description, BulletPoints, etc.
@@ -97,6 +103,11 @@ Provide reusable TSX code which can be used as template to generate new slides w
 - Generate TSX code for the graph, chart, etc. even if it is not present in the HTML reference.
 - Use graph schema and image to generate the TSX code.
 - Use Recharts library for graphs.
+- Always match chart fill colors, stroke colors, and label colors to what is visible in the slide image.
+- When the slide background is dark (black, navy, dark blue, etc.), all chart text must use light colors (e.g. white or light gray). Set the `stroke` on `<CartesianGrid>`, `<XAxis>`, `<YAxis>` and `fill` on `<Legend>` to a light color so they are visible. Never leave text elements in default black on a dark background.
+- For bar charts and column charts: always include data labels on each bar using `<LabelList dataKey="value" position="top" />` inside `<Bar>`. Match the label `fill` color to be visible against the bar/background.
+- For pie and donut charts: always include segment labels showing the data values using `label` prop or `<LabelList>`. If the original has a center label, render it with a custom `<text>` element inside the chart.
+- Always set `<ResponsiveContainer width="100%" height="100%">` or an explicit pixel height so the chart is visible and does not collapse to zero height.
 
 # Fonts Rules:
 - Check for "PROVIDED FONTS".
