@@ -66,7 +66,13 @@ export function ConfigurationInitializer({ children }: { children: React.ReactNo
         llmConfig = loadLLMConfigFromStorage() || {};
       }
       if (!llmConfig.LLM) {
-        llmConfig.LLM = 'openai';
+        llmConfig.LLM = 'custom';
+        if (!llmConfig.CUSTOM_LLM_URL) {
+          llmConfig.CUSTOM_LLM_URL = 'https://qgenie-api.qualcomm.com/v1';
+        }
+      }
+      if (!llmConfig.IMAGE_PROVIDER) {
+        llmConfig.IMAGE_PROVIDER = 'pexels';
       }
       dispatch(setLLMConfig(llmConfig));
       const isValid = hasValidLLMConfig(llmConfig);

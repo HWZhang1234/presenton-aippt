@@ -832,3 +832,21 @@ async def clone_slide_layout(
         layout_name=new_layout.layout_name,
         layout_code=new_layout.layout_code,
     )
+
+
+async def delete_template(
+    template_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        await session.execute(
+            delete(TemplateModel).where(TemplateModel.id == template_id)
+        )
+        await session.execute(
+            delete(PresentationLayoutCodeModel).where(
+                PresentationLayoutCodeModel.presentation == template_id
+            )
+        )
+        await session.commit()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete template")

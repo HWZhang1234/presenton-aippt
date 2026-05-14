@@ -4,8 +4,28 @@ import { Loader2 } from "lucide-react";
 import { TemplateWithData } from "@/app/presentation-templates/utils";
 import { CompiledLayout } from "@/app/hooks/compileLayout";
 
-
-
+class SlideErrorBoundary extends React.Component<
+    { children: React.ReactNode },
+    { hasError: boolean }
+> {
+    constructor(props: { children: React.ReactNode }) {
+        super(props);
+        this.state = { hasError: false };
+    }
+    static getDerivedStateFromError() {
+        return { hasError: true };
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400 text-xs">
+                    Preview unavailable
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
 
 export function TemplatePreviewStage({ children }: { children: React.ReactNode }) {
     return (
@@ -80,7 +100,9 @@ export const InbuiltTemplatePreview = memo(function InbuiltTemplatePreview({
                 const LayoutComponent = layout.component;
                 return (
                     <ScaledSlidePreview key={`${templateId}-preview-${index}`} id={templateId} index={index} isOutline={isOutline}>
-                        <LayoutComponent data={layout.sampleData} />
+                        <SlideErrorBoundary>
+                            <LayoutComponent data={layout.sampleData} />
+                        </SlideErrorBoundary>
                     </ScaledSlidePreview>
                 );
             })}
@@ -115,7 +137,9 @@ export const CustomTemplatePreview = memo(function CustomTemplatePreview({
                     const LayoutComponent = layout.component;
                     return (
                         <ScaledSlidePreview key={`${templateId}-preview-${index}`} id={templateId} index={index} isOutline={isOutline}>
-                            <LayoutComponent data={layout.sampleData} />
+                            <SlideErrorBoundary>
+                                <LayoutComponent data={layout.sampleData} />
+                            </SlideErrorBoundary>
                         </ScaledSlidePreview>
                     );
                 })

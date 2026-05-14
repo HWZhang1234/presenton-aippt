@@ -11,7 +11,6 @@ import {
     CustomTemplates,
 } from "@/app/hooks/useCustomTemplates";
 import CreateCustomTemplate from "./CreateCustomTemplate";
-import Link from "next/link";
 import { trackEvent, MixpanelEvent } from "@/utils/mixpanel";
 import {
     TemplatePreviewStage,
@@ -19,6 +18,7 @@ import {
     InbuiltTemplatePreview,
     CustomTemplatePreview,
 } from "../../../components/TemplatePreviewComponents";
+import PasswordDialog from "./PasswordDialog";
 
 export const CustomTemplateCard = React.memo(function CustomTemplateCard({ template }: { template: CustomTemplates }) {
     const router = useRouter();
@@ -90,9 +90,10 @@ const InbuiltTemplateCard = React.memo(function InbuiltTemplateCard({
 });
 
 const LayoutPreview = () => {
-    const [tab, setTab] = useState<'custom' | 'default'>('default');
+    const [tab, setTab] = useState<'custom' | 'default'>('custom');
     const router = useRouter();
     const { templates: customTemplates, loading: customLoading } = useCustomTemplateSummaries();
+    const [showNewTemplatePassword, setShowNewTemplatePassword] = useState(false);
 
     useEffect(() => {
         trackEvent(MixpanelEvent.Templates_Page_Viewed);
@@ -127,6 +128,15 @@ const LayoutPreview = () => {
 
     return (
         <div className="min-h-screen  relative font-syne">
+            <PasswordDialog
+                open={showNewTemplatePassword}
+                onClose={() => setShowNewTemplatePassword(false)}
+                onSuccess={() => {
+                    setShowNewTemplatePassword(false);
+                    trackEvent(MixpanelEvent.Templates_New_Template_Clicked);
+                    router.push('/custom-template');
+                }}
+            />
             <div
                 className='fixed z-0 -bottom-[16.5rem] left-0 w-full h-full'
                 style={{
@@ -141,9 +151,8 @@ const LayoutPreview = () => {
                         Templates
                     </h3>
                     <div className="flex  gap-2.5 max-sm:w-full max-md:justify-center max-sm:flex-wrap">
-                        <Link
-                            href="/custom-template"
-                            onClick={() => trackEvent(MixpanelEvent.Templates_New_Template_Clicked)}
+                        <button
+                            onClick={() => setShowNewTemplatePassword(true)}
                             className="inline-flex items-center font-syne font-semibold gap-2 rounded-xl px-4 py-2.5 text-black text-sm  shadow-sm hover:shadow-md"
                             aria-label="Create new template"
                             style={{
@@ -154,7 +163,7 @@ const LayoutPreview = () => {
                             <span className="hidden md:inline">New Template</span>
                             <span className="md:hidden">New</span>
                             <ChevronRight className="w-4 h-4" />
-                        </Link>
+                        </button>
 
                     </div>
                 </div>

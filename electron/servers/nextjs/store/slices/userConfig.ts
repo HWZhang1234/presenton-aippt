@@ -8,9 +8,9 @@ interface UserConfigState {
 
 const initialState: UserConfigState = {
   llm_config: {
-    LLM: "openai",
-    IMAGE_PROVIDER: "gpt-image-1.5",
-
+    LLM: "custom",
+    CUSTOM_LLM_URL: "https://qgenie-api.qualcomm.com/v1",
+    IMAGE_PROVIDER: "pexels",
   },
   can_change_keys: false,
 }

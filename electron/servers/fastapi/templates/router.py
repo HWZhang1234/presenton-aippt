@@ -16,6 +16,7 @@ from templates.handler import (
     clone_slide_layout,
     clone_template,
     create_slide_layout,
+    delete_template,
     edit_slide_layout,
     edit_slide_layout_section,
     get_all_templates,
@@ -30,6 +31,7 @@ from templates.handler import (
 )
 
 TEMPLATE_ROUTER = APIRouter(prefix="/template", tags=["Template"])
+TEMPLATE_MANAGEMENT_ROUTER = APIRouter(prefix="/template-management", tags=["Template"])
 
 TEMPLATE_ROUTER.get("/all", response_model=list[TemplateDetail])(get_all_templates)
 TEMPLATE_ROUTER.get(
@@ -62,4 +64,8 @@ TEMPLATE_ROUTER.put("/update", response_model=SaveTemplateResponse)(update_templ
 TEMPLATE_ROUTER.post("/slide-layout/save", status_code=200)(save_slide_layout)
 TEMPLATE_ROUTER.post("/slide-layout/clone", response_model=SaveTemplateLayoutData)(
     clone_slide_layout
+)
+
+TEMPLATE_MANAGEMENT_ROUTER.delete("/delete-templates/{template_id}", status_code=204)(
+    delete_template
 )

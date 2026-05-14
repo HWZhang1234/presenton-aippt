@@ -8,6 +8,29 @@ import "../../utils/prism-languages";
 
 import { MixpanelEvent, trackEvent } from "@/utils/mixpanel";
 import TemplateService from "../../services/api/template";
+
+class SlideErrorBoundary extends React.Component<
+    { children: React.ReactNode },
+    { hasError: boolean; error?: Error }
+> {
+    constructor(props: { children: React.ReactNode }) {
+        super(props);
+        this.state = { hasError: false };
+    }
+    static getDerivedStateFromError(error: Error) {
+        return { hasError: true, error };
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="w-full h-full flex items-center justify-center bg-gray-100 rounded text-gray-400 text-sm">
+                    Slide preview unavailable
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
 import Header from "../../(dashboard)/dashboard/components/Header";
 import { toast } from "sonner";
 import { CustomTemplateLayout, useCustomTemplateDetails } from "@/app/hooks/useCustomTemplates";
@@ -214,7 +237,9 @@ const GroupLayoutPreview = () => {
                       className="flex-shrink-0"
                       style={{ width: "1280px", height: "720px" }}
                     >
-                      <LayoutComponent data={template.sampleData} />
+                      <SlideErrorBoundary>
+                        <LayoutComponent data={template.sampleData} />
+                      </SlideErrorBoundary>
                     </div>
                   </div>
                 </div>
@@ -256,7 +281,9 @@ const GroupLayoutPreview = () => {
                       className="flex-shrink-0"
                       style={{ width: "1280px", height: "720px" }}
                     >
-                      <LayoutComponent data={layout.sampleData} />
+                      <SlideErrorBoundary>
+                        <LayoutComponent data={layout.sampleData} />
+                      </SlideErrorBoundary>
                     </div>
                   </div>
                 </Card>

@@ -1,16 +1,25 @@
 import { Plus, Sparkles } from 'lucide-react'
 import { useRouter } from 'next/navigation';
-import React from 'react'
+import React, { useState } from 'react'
 import { trackEvent, MixpanelEvent } from "@/utils/mixpanel";
+import PasswordDialog from './PasswordDialog';
 
 const CreateCustomTemplate = () => {
     const router = useRouter();
+    const [showPasswordDialog, setShowPasswordDialog] = useState(false);
     return (
-        <div
-            onClick={() => {
+        <>
+        <PasswordDialog
+            open={showPasswordDialog}
+            onClose={() => setShowPasswordDialog(false)}
+            onSuccess={() => {
+                setShowPasswordDialog(false);
                 trackEvent(MixpanelEvent.Templates_Build_Template_Clicked);
-                router.push('/custom-template')
+                router.push('/custom-template');
             }}
+        />
+        <div
+            onClick={() => setShowPasswordDialog(true)}
             className='w-full rounded-[22px] border border-[#EDEEEF] cursor-pointer font-syne'>
             <div className='relative h-[215px] flex justify-center items-center '>
                 <img src="/card_bg.svg" alt="" className="absolute top-0 z-[1] left-0 w-full h-full object-cover" />
@@ -36,6 +45,7 @@ const CreateCustomTemplate = () => {
 
             </div>
         </div>
+        </>
     )
 }
 
